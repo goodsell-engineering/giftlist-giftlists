@@ -1,0 +1,81 @@
+using GiftLists.Application.Common;
+using GiftLists.Application.GiftLists;
+using GiftLists.Application.GiftLists.AddGiftItem;
+using GiftLists.Application.GiftLists.CreateGiftList;
+using GiftLists.Application.GiftLists.DeleteGiftList;
+using GiftLists.Application.GiftLists.RenameGiftList;
+using GiftLists.Application.GiftLists.RemoveGiftItem;
+using GiftLists.Infrastructure.GiftLists.Messaging;
+using GiftLists.Infrastructure.GiftLists.Persistence;
+using GiftLists.Infrastructure.Platform.Security;
+using Microsoft.Extensions.DependencyInjection;
+using MongoDB.Driver;
+using Rebus.Config;
+
+namespace GiftLists.Infrastructure.Platform;
+
+/// <summary>
+/// GiftLists' composition root, called once from <c>GiftLists.Host</c>'s <c>Program.cs</c>. Host
+/// itself contains no wiring beyond the call to this method (CONVENTIONS.md "Project reference graph"); everything below
+/// is grouped by domain (<c>GiftLists/...</c>) rather than by technical category, same as
+/// production code (CONVENTIONS.md "Folder structure") — <c>Platform/</c> holds only this aggregator, which
+/// belongs to no single domain.
+/// </summary>
+public static class GiftListsInfrastructureServiceCollectionExtensions
+{
+    public static IServiceCollection AddGiftListsInfrastructure(this IServiceCollection services)
+    {
+        AddGiftLists(services);
+        return services;
+    }
+
+    /// <summary>
+    /// Applies startup-time infrastructure that needs a live connection — today, just the unique
+    /// <c>shareToken</c> index (ARCHITECTURE.md "Data model"). Called once from <c>Program.cs</c> after the
+    /// host is built, mirroring how Mongo/Rebus health checks are wired ahead of any use case.
+    /// </summary>
+    public static Task EnsureIndexesAsync(IServiceProvider serviceProvider, CancellationToken cancellationToken)
+    {
+        var database = serviceProvider.GetRequiredService<IMongoDatabase>();
+        return GiftListRepository.EnsureIndexesAsync(database, cancellationToken);
+    }
+
+    private static void AddGiftLists(IServiceCollection services)
+    {
+        services.AddSingleton<IClock, SystemClock>();
+        services.AddSingleton<IShareTokenGenerator, ShareTokenGenerator>();
+        services.AddScoped<IGiftListRepository, GiftListRepository>();
+        services.AddScoped<IDomainEventPublisher, GiftListEventPublisher>();
+
+        services.AddScoped<IValidator<CreateGiftListRequest>, CreateGiftListValidator>();
+        services.AddScoped<IInteractor<CreateGiftListRequest, CreateGiftListResponse>, CreateGiftListInteractor>();
+
+        services.AddScoped<IValidator<RenameGiftListRequest>, RenameGiftListValidator>();
+        services.AddScoped<IInteractor<RenameGiftListRequest, RenameGiftListResponse>, RenameGiftListInteractor>();
+
+        services.AddScoped<IValidator<DeleteGiftListRequest>, DeleteGiftListValidator>();
+        services.AddScoped<IInteractor<DeleteGiftListRequest, DeleteGiftListResponse>, DeleteGiftListInteractor>();
+
+        services.AddScoped<IValidator<AddGiftItemRequest>, AddGiftItemValidator>();
+        services.AddScoped<IInteractor<AddGiftItemRequest, AddGiftItemResponse>, AddGiftItemInteractor>();
+
+        services.AddScoped<IValidator<RemoveGiftItemRequest>, RemoveGiftItemValidator>();
+        services.AddScoped<IInteractor<RemoveGiftItemRequest, RemoveGiftItemResponse>, RemoveGiftItemInteractor>();
+
+        // One open-generic decorator pair, applied to every IInteractor<,> registered above,
+        // rather than a hand-written decorator per use case — see
+        // GiftLists.Application.Common.IInteractor's doc comment for why the specifically-named
+        // ports (ICreateGiftList, ...) themselves cannot be the decoration target. Validation,
+        // then Logging, in that order in every service (CONVENTIONS.md "Use cases") — Logging is
+        // therefore the outermost decorator and also observes a validation failure, not just a
+        // business one.
+        services.Decorate(typeof(IInteractor<,>), typeof(Validating<,>));
+        services.Decorate(typeof(IInteractor<,>), typeof(Logging<,>));
+
+        services.AddRebusHandler<CreateGiftListHandler>();
+        services.AddRebusHandler<RenameGiftListHandler>();
+        services.AddRebusHandler<DeleteGiftListHandler>();
+        services.AddRebusHandler<AddGiftItemHandler>();
+        services.AddRebusHandler<RemoveGiftItemHandler>();
+    }
+}
