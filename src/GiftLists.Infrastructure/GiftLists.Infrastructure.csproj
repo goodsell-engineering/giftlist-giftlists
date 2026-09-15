@@ -1,0 +1,47 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <PackageReference Include="MongoDB.Driver" Version="3.11.1" />
+    <PackageReference Include="Rebus" Version="8.9.3" />
+    <PackageReference Include="Rebus.ServiceProvider" Version="10.7.2" />
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="10.0.11" />
+    <PackageReference Include="Microsoft.Extensions.Configuration.Abstractions" Version="10.0.11" />
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.11" />
+    <!-- Open-generic decoration (CONVENTIONS.md "Use cases" — one Validating<,>/Logging<,> pair for
+         every use case) needs Scrutor's Decorate(Type, Type) overload; Microsoft.Extensions.DI
+         alone has no equivalent. -->
+    <PackageReference Include="Scrutor" Version="7.0.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\GiftLists.Application\GiftLists.Application.csproj" />
+    <ProjectReference Include="..\GiftLists.Domain\GiftLists.Domain.csproj" />
+    <ProjectReference Include="..\GiftLists.Contracts\GiftLists.Contracts.csproj" />
+    <!-- CONVENTIONS.md "Project reference graph": Infrastructure may reference BuildingBlocks directly too — needed here
+         for BuildingBlocks.Results.Result<T>, which the repository pattern-matches on when
+         translating a Mongo write outcome, and MongoConventions/AddBuildingBlocksMongo wiring. -->
+    <PackageReference Include="BuildingBlocks" Version="0.1.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- GL-21, restated against CONVENTIONS.md "Reaching an internal from a test" (GL-69), which
+         asks a grant to say why the two routes ahead of it were unavailable. GiftListEventMapper
+         is the ARCHITECTURE.md "Domain events are not integration events" seam.
+
+         Route 1, extract a public framework-free type: nowhere to extract it TO. The mapper's
+         whole job is to read GiftLists.Domain events and write GiftLists.Contracts types, and
+         CONVENTIONS.md "Project reference graph" lets no ring below Infrastructure reference
+         *.Contracts — so Application and Domain are both closed to it. Making it public instead
+         would advertise a surface nothing outside this assembly is meant to call, which that
+         section explicitly does not license.
+         Route 2, resolve through the composition root: nothing registers it. It is internal
+         static and GiftListEventPublisher calls it statically, so there is no port to resolve the
+         way Identity.UnitTests' InfrastructurePorts resolves IPasswordHasher — the closest thing,
+         IDomainEventPublisher, would drag in a real IBus and stop being a unit test.
+
+         Domain-to-integration mapping has that shape by construction, which is why the convention
+         names this grant as its standing example. Same reason as BuildingBlocks.Infrastructure's
+         grants for its own internal pipeline steps. -->
+    <InternalsVisibleTo Include="GiftLists.UnitTests" />
+  </ItemGroup>
+</Project>

@@ -1,0 +1,39 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <ProjectReference Include="..\GiftLists.Domain\GiftLists.Domain.csproj" />
+    <!-- CONVENTIONS.md "Project reference graph": Application may reference Domain and BuildingBlocks only —
+         BuildingBlocks is itself BCL-only, so this brings in Result<T>/Error/ErrorKind without
+         making Rebus/MongoDB/etc. reachable. -->
+    <PackageReference Include="BuildingBlocks" Version="0.1.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Interactors are internal sealed and registered against the open generic IInteractor<,>
+         (CONVENTIONS.md "Use cases" [AT]). The validators beside them are internal sealed too —
+         as a fact of this codebase, not as something that section states; do not read the
+         citation as covering them. Either way the composition root has to name the concrete
+         types to register them, so AddGiftListsInfrastructure would not compile without this.
+         Production wiring required by "Use cases", not a testing decision: CONVENTIONS.md
+         "Reaching an internal from a test" carves out exactly THIS grant — Application to its
+         own Infrastructure, for the composition root — and says in terms that targeting a
+         production assembly is not itself a reason. Do not cite this comment, or that carve-out,
+         to add a production grant of any other shape (Domain to Infrastructure, Infrastructure
+         to Host, one service to another): those are judged by the three options like anything
+         else, and need the same written justification. -->
+    <InternalsVisibleTo Include="GiftLists.Infrastructure" />
+    <!-- A grant to a test project, so it IS governed by that ordering (GL-69, which removed the
+         sibling grants in Identity.Application and Gateway.Application because they granted
+         nothing; a grant of this shape is earned per service, never copied across).
+
+         Route 1, extract a public framework-free type, does not apply: an interactor or validator
+         is a use case orchestrating ports, not an algorithm that could be lifted out of one.
+         Route 2, resolve through the composition root, cannot serve these tests: resolving
+         IInteractor<,> from AddGiftListsInfrastructure yields the interactor bound to the
+         PRODUCTION adapters and wrapped in the Validating/Logging decorators — and would not
+         resolve at all here, since GiftListRepository needs an IMongoDatabase that only
+         AddBuildingBlocksMongo registers. These tests construct the interactor against
+         hand-written fakes precisely to avoid all of that (CONVENTIONS.md "Testing"). -->
+    <InternalsVisibleTo Include="GiftLists.UnitTests" />
+  </ItemGroup>
+</Project>

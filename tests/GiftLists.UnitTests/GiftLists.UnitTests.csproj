@@ -1,0 +1,28 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="coverlet.collector" Version="6.0.4" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.14.1" />
+    <PackageReference Include="xunit" Version="2.9.3" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="3.1.4" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Using Include="Xunit" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\GiftLists.Domain\GiftLists.Domain.csproj" />
+    <ProjectReference Include="..\..\src\GiftLists.Application\GiftLists.Application.csproj" />
+    <!-- GL-21: the ARCHITECTURE.md "Domain events are not integration events" event mapper is Infrastructure. The integration suite proves each V1
+         event reaches a real broker, but only over the happy path one interactor at a time; the
+         field-by-field mapping and the unmapped-event throw are gaps only this suite reaches
+         (CONVENTIONS.md "Testing"). Mirrors Identity.UnitTests, which references its own
+         Infrastructure for the same kind of adapter-level gap. -->
+    <ProjectReference Include="..\..\src\GiftLists.Infrastructure\GiftLists.Infrastructure.csproj" />
+  </ItemGroup>
+</Project>

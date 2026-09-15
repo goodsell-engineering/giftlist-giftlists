@@ -1,0 +1,26 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- CONVENTIONS.md "Project reference graph": Contracts references nothing — never Domain, never BuildingBlocks. This
+       is GiftLists' entire public wire surface: the commands it accepts and the events it
+       publishes (ARCHITECTURE.md "Event catalogue"). -->
+
+  <!-- GL-25: this project is the package. Packed to the local folder feed and consumed by
+       every other repo that sends GiftLists a command or subscribes to its events
+       (ARCHITECTURE.md "Contracts: each service owns and publishes its own"). PackageId is the
+       assembly name character for character, deliberately: ARCHITECTURE.md "What 'breaking'
+       means for a message contract" makes the type name and namespace part of the wire format,
+       because Rebus routes and deserializes on the .NET type name.
+
+       Version 0.1.0 is the split's starting point; GL-27 owns the bump discipline from here.
+       Do not repack a version that is already in the feed — NuGet caches by (id, version), so
+       consumers would silently keep the old contract. GL-28's pack-all guard is what turns that
+       into a build error. -->
+  <PropertyGroup>
+    <IsPackable>true</IsPackable>
+    <PackageId>GiftLists.Contracts</PackageId>
+    <Version>0.1.0</Version>
+    <Authors>goodsell-engineering</Authors>
+    <Description>GiftLists' entire public wire surface: the commands it accepts (CreateGiftList, RenameGiftList, DeleteGiftList, AddGiftItem, RemoveGiftItem) and the events it publishes (GiftListCreatedV1, GiftListRenamedV1, GiftListDeletedV1, GiftItemAddedV1, GiftItemRemovedV1).</Description>
+  </PropertyGroup>
+
+</Project>
