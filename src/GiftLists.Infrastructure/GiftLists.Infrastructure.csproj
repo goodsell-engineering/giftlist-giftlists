@@ -20,7 +20,7 @@
     <!-- CONVENTIONS.md "Project reference graph": Infrastructure may reference BuildingBlocks directly too — needed here
          for BuildingBlocks.Results.Result<T>, which the repository pattern-matches on when
          translating a Mongo write outcome, and MongoConventions/AddBuildingBlocksMongo wiring. -->
-    <PackageReference Include="BuildingBlocks" Version="0.1.0" />
+    <PackageReference Include="BuildingBlocks" Version="[0.1.0]" />
   </ItemGroup>
 
   <ItemGroup>
