@@ -5,7 +5,7 @@
     <!-- CONVENTIONS.md "Project reference graph": Application may reference Domain and BuildingBlocks only —
          BuildingBlocks is itself BCL-only, so this brings in Result<T>/Error/ErrorKind without
          making Rebus/MongoDB/etc. reachable. -->
-    <PackageReference Include="BuildingBlocks" Version="0.1.0" />
+    <PackageReference Include="BuildingBlocks" Version="[0.1.0]" />
   </ItemGroup>
 
   <ItemGroup>
