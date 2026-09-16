@@ -1,0 +1,106 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+# GL-30: build + unit test only. Same shape and same reasoning as giftlist-identity's workflow
+# (read its comments for the full account) — this repo restores BuildingBlocks,
+# BuildingBlocks.Infrastructure and BuildingBlocks.Testing from ../local-feed (nuget.config,
+# GL-26), which does not exist on a fresh runner, so this job builds giftlist-buildingblocks from
+# source into a job-local feed rather than depending on a registry that does not exist
+# (ARCHITECTURE.md "Packaging: local feed") or on GL-28's `make pack-all` (not yet merged).
+# GiftLists.Contracts itself is a ProjectReference within this repo, not a feed package, so no
+# other sibling checkout is needed here.
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout giftlist-giftlists
+        uses: actions/checkout@v4
+        with:
+          path: giftlist-giftlists
+
+      - name: Checkout giftlist-buildingblocks (sibling)
+        uses: actions/checkout@v4
+        with:
+          repository: goodsell-engineering/giftlist-buildingblocks
+          path: giftlist-buildingblocks
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Pack BuildingBlocks/.Infrastructure/.Testing into a job-local feed
+        run: |
+          set -euo pipefail
+          FEED="$GITHUB_WORKSPACE/local-feed"
+          mkdir -p "$FEED"
+          : > "$GITHUB_WORKSPACE/expected-versions.env"
+          for proj in \
+            giftlist-buildingblocks/src/BuildingBlocks/BuildingBlocks.csproj \
+            giftlist-buildingblocks/src/BuildingBlocks.Infrastructure/BuildingBlocks.Infrastructure.csproj \
+            giftlist-buildingblocks/src/BuildingBlocks.Testing/BuildingBlocks.Testing.csproj; do
+            id=$(dotnet msbuild "$proj" -getProperty:PackageId -nologo)
+            ver=$(dotnet msbuild "$proj" -getProperty:Version -nologo)
+            dotnet pack "$proj" -c Release -o "$FEED" --nologo
+            echo "$id=$ver" >> "$GITHUB_WORKSPACE/expected-versions.env"
+          done
+          echo "Packed into $FEED:"
+          ls -la "$FEED"
+
+      - name: Restore
+        working-directory: giftlist-giftlists
+        run: dotnet restore GiftLists.sln -v n
+
+      - name: Build
+        working-directory: giftlist-giftlists
+        run: dotnet build GiftLists.sln --no-restore -c Release
+
+      # Only *.UnitTests runs — *.IntegrationTests is built above (proving it compiles) but
+      # never executed, since it starts real Mongo/RabbitMQ via Testcontainers
+      # (CONVENTIONS.md "Testing"). Naming the exact project rather than the solution or a
+      # --filter over it is what makes that a structural guarantee, not a convention someone can
+      # forget.
+      - name: Unit tests
+        working-directory: giftlist-giftlists
+        run: >
+          dotnet test tests/GiftLists.UnitTests/GiftLists.UnitTests.csproj
+          --no-build -c Release --logger "console;verbosity=normal"
+
+      # See giftlist-identity's workflow for the full rationale: proves the resolved version for
+      # each GiftList package id is the one this job just built from source, not nuget.org's
+      # same-named impostor at a different version (BuildingBlocks 1.0.0 today) or a stale cache.
+      - name: Prove which package versions actually resolved
+        working-directory: giftlist-giftlists
+        run: |
+          set -euo pipefail
+          echo "== Packed this run (source of truth) =="
+          cat "$GITHUB_WORKSPACE/expected-versions.env"
+          echo
+          echo "== Resolved by GiftLists.sln =="
+          dotnet list GiftLists.sln package --include-transitive --format json > /tmp/resolved.json
+          fail=0
+          while IFS='=' read -r id expected; do
+            [ -z "$id" ] && continue
+            resolved=$(jq -r --arg id "$id" '
+              [.projects[].frameworks[]? |
+                ((.topLevelPackages // []) + (.transitivePackages // []))[] |
+                select(.id == $id) | .resolvedVersion] | unique | .[]?
+            ' /tmp/resolved.json)
+            if [ -z "$resolved" ]; then
+              echo "  $id: not referenced by this solution (fine if unused by this repo's projects)"
+              continue
+            fi
+            while IFS= read -r v; do
+              echo "  $id resolved to $v (this job packed $expected from source)"
+              if [ "$v" != "$expected" ]; then
+                echo "  FAIL: $id resolved to $v but this job packed $expected from source." >&2
+                echo "        A mismatch means the restore did not come from ../local-feed as" >&2
+                echo "        expected -- check nuget.config's packageSourceMapping." >&2
+                fail=1
+              fi
+            done <<< "$resolved"
+          done < "$GITHUB_WORKSPACE/expected-versions.env"
+          exit $fail
