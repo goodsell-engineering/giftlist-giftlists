@@ -1,4 +1,3 @@
-using System.Text.RegularExpressions;
 using GiftLists.Application.GiftLists;
 using GiftLists.Contracts.GiftLists;
 using GiftLists.Contracts.GiftLists.Events;
@@ -101,11 +100,10 @@ public sealed class CreateGiftListTests(GiftListsFixture fixture) : IAsyncLifeti
     /// faked, unlike <see cref="GiftListsFixture.CreateGiftListsScope"/>'s own doc comment
     /// explaining why a wire-level *collision* test is not possible) for two independent lists and
     /// asserts their published tokens differ — the one thing a fixed/non-random implementation
-    /// could not produce — while also re-checking the full base62 alphabet
-    /// (<c>GiftLists.Domain.GiftLists.ShareToken.Length</c>/pattern), not just the length, both of
-    /// which the aggregate's own <c>ShareToken</c> constructor already enforces before this event
-    /// is ever published (an invalid value would throw there and this test would time out waiting
-    /// on <see cref="EventSubscriber{TEvent}"/>, not fail a weaker assertion silently).
+    /// could not produce. The base62/length pattern below is hardcoded rather than read from
+    /// <c>GiftLists.Domain.GiftLists.ShareToken</c>'s own constants deliberately — an independent
+    /// restatement of the expected shape is worth more here than a comparison that would pass
+    /// trivially if that type's own pattern ever changed underneath it.
     /// </summary>
     [Fact]
     public async Task CreateGiftList_ShouldGenerateADistinctRandomShareToken_ForEachList()
@@ -127,8 +125,8 @@ public sealed class CreateGiftListTests(GiftListsFixture fixture) : IAsyncLifeti
         var secondPublished = await secondSubscriber.Capture.Completion.Task.WaitAsync(TimeSpan.FromSeconds(15));
 
         // Assert
-        Assert.Matches(new Regex("^[0-9A-Za-z]{21}$"), firstPublished.ShareToken);
-        Assert.Matches(new Regex("^[0-9A-Za-z]{21}$"), secondPublished.ShareToken);
+        Assert.Matches("^[0-9A-Za-z]{21}$", firstPublished.ShareToken);
+        Assert.Matches("^[0-9A-Za-z]{21}$", secondPublished.ShareToken);
         Assert.NotEqual(firstPublished.ShareToken, secondPublished.ShareToken);
     }
 }
