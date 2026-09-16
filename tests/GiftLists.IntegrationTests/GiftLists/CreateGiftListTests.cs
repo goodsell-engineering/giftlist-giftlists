@@ -88,4 +88,45 @@ public sealed class CreateGiftListTests(GiftListsFixture fixture) : IAsyncLifeti
         var persisted = await repository.FindByIdAsync(new GiftListId(listId), CancellationToken.None);
         Assert.NotNull(persisted);
     }
+
+    /// <summary>
+    /// GL-31: proves GENERATION, not merely storage/shape. The two tests above already assert
+    /// <c>published.ShareToken.Length == 21</c>, but that alone is satisfied just as well by a
+    /// hardcoded 21-character constant returned on every call — it says nothing about whether
+    /// <see cref="Infrastructure.Platform.Security.ShareTokenGenerator"/>'s
+    /// <c>RandomNumberGenerator</c> source is actually being consulted per list. This test goes
+    /// through the real wire path (<see cref="GiftListsFixture.RequesterBus"/>, the real command
+    /// handler, the real composition-root-registered <c>IShareTokenGenerator</c> — nothing here is
+    /// faked, unlike <see cref="GiftListsFixture.CreateGiftListsScope"/>'s own doc comment
+    /// explaining why a wire-level *collision* test is not possible) for two independent lists and
+    /// asserts their published tokens differ — the one thing a fixed/non-random implementation
+    /// could not produce. The base62/length pattern below is hardcoded rather than read from
+    /// <c>GiftLists.Domain.GiftLists.ShareToken</c>'s own constants deliberately — an independent
+    /// restatement of the expected shape is worth more here than a comparison that would pass
+    /// trivially if that type's own pattern ever changed underneath it.
+    /// </summary>
+    [Fact]
+    public async Task CreateGiftList_ShouldGenerateADistinctRandomShareToken_ForEachList()
+    {
+        // Arrange
+        await using var firstSubscriber = await EventSubscriber<GiftListCreatedV1>.StartAsync(fixture.RabbitMqConnectionString);
+        var firstListId = Guid.NewGuid();
+        var ownerId = Guid.NewGuid();
+        var expiresAt = DateTimeOffset.UtcNow.AddDays(7);
+
+        // Act
+        await fixture.RequesterBus.Send(new CreateGiftList(firstListId, ownerId, "First List", expiresAt));
+        var firstPublished = await firstSubscriber.Capture.Completion.Task.WaitAsync(TimeSpan.FromSeconds(15));
+
+        await using var secondSubscriber = await EventSubscriber<GiftListCreatedV1>.StartAsync(fixture.RabbitMqConnectionString);
+        var secondListId = Guid.NewGuid();
+
+        await fixture.RequesterBus.Send(new CreateGiftList(secondListId, ownerId, "Second List", expiresAt));
+        var secondPublished = await secondSubscriber.Capture.Completion.Task.WaitAsync(TimeSpan.FromSeconds(15));
+
+        // Assert
+        Assert.Matches("^[0-9A-Za-z]{21}$", firstPublished.ShareToken);
+        Assert.Matches("^[0-9A-Za-z]{21}$", secondPublished.ShareToken);
+        Assert.NotEqual(firstPublished.ShareToken, secondPublished.ShareToken);
+    }
 }
