@@ -46,8 +46,8 @@ namespace GiftLists.Infrastructure.GiftLists.Persistence;
 /// exactly as strong about messaging only because the write still fails loudly. Both properties
 /// come from the failure, not from the precondition alone.</para>
 ///
-/// <para><b>What keeps it.</b> A rename is a whole-field <c>$set</c>, not an element operation,
-/// so nothing about GL-68 argues for loosening it and
+/// <para><b>What keeps it.</b> A rename — and, since GL-41, an expiry move — is a whole-field
+/// <c>$set</c>, not an element operation, so nothing about GL-68 argues for loosening it and
 /// <c>GiftListRepositoryTests.UpdateAsync_ShouldThrowConcurrencyException_WhenAnotherWriterSavedFirst</c>
 /// (two racing renames) still means what it always meant. The guard narrows to field-scoped
 /// writes rather than being dropped. One consequence worth stating plainly: the stored
@@ -75,6 +75,7 @@ internal static class GiftListToUpdateMapper
         var addedItems = new List<GiftItemDocument>();
         var removedItemIds = new List<Guid>();
         string? renamedTo = null;
+        DateTime? expiryMovedTo = null;
 
         foreach (var domainEvent in list.DomainEvents)
         {
@@ -99,6 +100,12 @@ internal static class GiftListToUpdateMapper
                 // final name the aggregate holds" is the only answer that could be right.
                 case GiftListRenamed renamed:
                     renamedTo = renamed.Name.Value;
+                    break;
+
+                // Same shape as a rename: a whole-field $set, last one wins. UtcDateTime for the
+                // same reason GiftListToDocumentMapper uses it — the document stores a BSON date.
+                case GiftListExpiryChanged expiryChanged:
+                    expiryMovedTo = expiryChanged.Expiry.Value.UtcDateTime;
                     break;
 
                 default:
@@ -157,8 +164,18 @@ internal static class GiftListToUpdateMapper
         if (renamedTo is not null)
         {
             changes.Add(Builders<GiftListDocument>.Update.Set(d => d.Name, renamedTo));
-            // Field-scoped, so this update — and, conservatively, anything batched with it — is
-            // version-guarded, and is the only kind of update that advances the stored counter.
+        }
+
+        if (expiryMovedTo is not null)
+        {
+            changes.Add(Builders<GiftListDocument>.Update.Set(d => d.ExpiresAt, expiryMovedTo.Value));
+        }
+
+        if (renamedTo is not null || expiryMovedTo is not null)
+        {
+            // Field-scoped (a rename, an expiry move, or both), so this update — and,
+            // conservatively, anything batched with it — is version-guarded, and is the only
+            // kind of update that advances the stored counter.
             //
             // A caveat for whoever first writes an interactor that renames AND adds in one save
             // (none does today; UpdateAsync_ShouldSucceed_WhenTwoMutationsArePerformedBeforeOneSave

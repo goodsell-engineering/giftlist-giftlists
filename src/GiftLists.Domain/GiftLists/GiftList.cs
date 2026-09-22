@@ -135,6 +135,23 @@ public sealed class GiftList
     }
 
     /// <summary>
+    /// Moves the expiry, raising <see cref="GiftListExpiryChanged"/>. Ownership is the
+    /// interactor's check, as for <see cref="Rename"/>. "The new expiry must be in the future" is
+    /// <see cref="ExpiryDate"/>'s own constructor rule, so an <see cref="ExpiryDate"/> that
+    /// reaches here is already valid; nothing is re-checked. An already-expired list may be given
+    /// a future expiry — that is the only way an owner can revive one, and expiry is a query-time
+    /// predicate everywhere (ARCHITECTURE.md "Auth & sharing"), so there is no "expired" flag to
+    /// unset.
+    /// </summary>
+    public void ChangeExpiry(ExpiryDate expiry, DateTimeOffset changedAt)
+    {
+        Expiry = expiry;
+        Version++;
+        // See Rename's own comment — GL-66.
+        _domainEvents.Add(new GiftListExpiryChanged(Id, expiry, Timestamps.ToStoredPrecision(changedAt)));
+    }
+
+    /// <summary>
     /// Marks the list deleted, raising <see cref="GiftListDeleted"/>. Carries no state change of
     /// its own — the interactor removes the persisted document entirely after this returns
     /// (ARCHITECTURE.md "Event publishing: synchronous" — save/delete first, publish second), so there is no "IsDeleted"

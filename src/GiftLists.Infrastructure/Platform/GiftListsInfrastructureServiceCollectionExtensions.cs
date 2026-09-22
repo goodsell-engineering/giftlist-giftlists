@@ -1,15 +1,19 @@
 using GiftLists.Application.Common;
 using GiftLists.Application.GiftLists;
 using GiftLists.Application.GiftLists.AddGiftItem;
+using GiftLists.Application.GiftLists.ChangeGiftListExpiry;
 using GiftLists.Application.GiftLists.CreateGiftList;
 using GiftLists.Application.GiftLists.DeleteGiftList;
 using GiftLists.Application.GiftLists.RenameGiftList;
 using GiftLists.Application.GiftLists.RemoveGiftItem;
 using GiftLists.Infrastructure.GiftLists.Messaging;
 using GiftLists.Infrastructure.GiftLists.Persistence;
+using GiftLists.Contracts.GiftLists.Events;
 using GiftLists.Infrastructure.Platform.Security;
 using Microsoft.Extensions.DependencyInjection;
+using MongoDB.Bson;
 using MongoDB.Driver;
+using Rebus.Bus;
 using Rebus.Config;
 
 namespace GiftLists.Infrastructure.Platform;
@@ -34,10 +38,45 @@ public static class GiftListsInfrastructureServiceCollectionExtensions
     /// <c>shareToken</c> index (ARCHITECTURE.md "Data model"). Called once from <c>Program.cs</c> after the
     /// host is built, mirroring how Mongo/Rebus health checks are wired ahead of any use case.
     /// </summary>
-    public static Task EnsureIndexesAsync(IServiceProvider serviceProvider, CancellationToken cancellationToken)
+    public static async Task EnsureIndexesAsync(IServiceProvider serviceProvider, CancellationToken cancellationToken)
     {
         var database = serviceProvider.GetRequiredService<IMongoDatabase>();
-        return GiftListRepository.EnsureIndexesAsync(database, cancellationToken);
+        await GiftListRepository.EnsureIndexesAsync(database, cancellationToken);
+        await EnsureExpirySagaIndexesAsync(database, cancellationToken);
+    }
+
+    /// <summary>
+    /// The unique index on the expiry saga's correlation property — the one Rebus.MongoDb would
+    /// otherwise create lazily on first insert (see <c>GiftListsRebusConfiguration</c>, which
+    /// turns that off and says why). Same shape Rebus uses: unique, ascending, on the correlation
+    /// property's own element name, which is what its own lookup filters on. Uniqueness is the
+    /// saga's one-instance-per-list guarantee, not an optimisation: two rows for one list would
+    /// mean two timeouts and two <c>GiftListExpiredV1</c>s.
+    /// </summary>
+    private static Task EnsureExpirySagaIndexesAsync(IMongoDatabase database, CancellationToken cancellationToken)
+    {
+        var sagas = database.GetCollection<BsonDocument>(GiftListsRebusConfiguration.SagasCollectionName);
+        var correlationIndex = new CreateIndexModel<BsonDocument>(
+            Builders<BsonDocument>.IndexKeys.Ascending(GiftListsRebusConfiguration.SagaCorrelationElementName),
+            new CreateIndexOptions { Unique = true, Name = "listId_unique" });
+
+        return sagas.Indexes.CreateOneAsync(correlationIndex, cancellationToken: cancellationToken);
+    }
+
+    /// <summary>
+    /// Subscribes this service to the three of its OWN events the expiry saga runs on
+    /// (ARCHITECTURE.md "Sagas: list expiry"). Called once from <c>Program.cs</c> after the host
+    /// is built, the same placement as <see cref="EnsureIndexesAsync"/> and as
+    /// <c>Reservations.Infrastructure.Platform.ReservationsInfrastructureServiceCollectionExtensions.SubscribeToGiftListsEventsAsync</c>.
+    /// Three, not seven: a subscribed event with no handler on this queue is a dispatch failure
+    /// that lands in the error queue, so only what <c>GiftListExpirySaga</c> handles is bound.
+    /// </summary>
+    public static async Task SubscribeToOwnEventsAsync(IServiceProvider serviceProvider, CancellationToken cancellationToken)
+    {
+        var bus = serviceProvider.GetRequiredService<IBus>();
+        await bus.Subscribe<GiftListCreatedV1>();
+        await bus.Subscribe<GiftListExpiryChangedV1>();
+        await bus.Subscribe<GiftListDeletedV1>();
     }
 
     private static void AddGiftLists(IServiceCollection services)
@@ -52,6 +91,9 @@ public static class GiftListsInfrastructureServiceCollectionExtensions
 
         services.AddScoped<IValidator<RenameGiftListRequest>, RenameGiftListValidator>();
         services.AddScoped<IInteractor<RenameGiftListRequest, RenameGiftListResponse>, RenameGiftListInteractor>();
+
+        services.AddScoped<IValidator<ChangeGiftListExpiryRequest>, ChangeGiftListExpiryValidator>();
+        services.AddScoped<IInteractor<ChangeGiftListExpiryRequest, ChangeGiftListExpiryResponse>, ChangeGiftListExpiryInteractor>();
 
         services.AddScoped<IValidator<DeleteGiftListRequest>, DeleteGiftListValidator>();
         services.AddScoped<IInteractor<DeleteGiftListRequest, DeleteGiftListResponse>, DeleteGiftListInteractor>();
@@ -74,8 +116,14 @@ public static class GiftListsInfrastructureServiceCollectionExtensions
 
         services.AddRebusHandler<CreateGiftListHandler>();
         services.AddRebusHandler<RenameGiftListHandler>();
+        services.AddRebusHandler<ChangeGiftListExpiryHandler>();
         services.AddRebusHandler<DeleteGiftListHandler>();
         services.AddRebusHandler<AddGiftItemHandler>();
         services.AddRebusHandler<RemoveGiftItemHandler>();
+
+        // GL-41: the expiry saga is a Rebus handler too, resolved per message like the ones
+        // above; its Mongo-backed saga/timeout storage is GiftListsRebusConfiguration's job and
+        // its subscriptions are SubscribeToOwnEventsAsync's.
+        services.AddRebusHandler<GiftListExpirySaga>();
     }
 }

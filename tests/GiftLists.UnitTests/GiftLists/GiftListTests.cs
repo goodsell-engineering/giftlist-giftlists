@@ -68,6 +68,28 @@ public sealed class GiftListTests
     }
 
     [Fact]
+    public void ChangeExpiry_ShouldUpdateExpiryAndRaiseAGiftListExpiryChangedEvent()
+    {
+        // Arrange
+        var list = CreateList();
+        list.ClearDomainEvents();
+        var newExpiry = new ExpiryDate(Now.AddDays(30), Now);
+        var changedAt = Now.AddDays(1);
+
+        // Act
+        list.ChangeExpiry(newExpiry, changedAt);
+
+        // Assert
+        Assert.Equal(newExpiry, list.Expiry);
+        Assert.Equal(1, list.Version);
+        var domainEvent = Assert.Single(list.DomainEvents);
+        var changed = Assert.IsType<GiftListExpiryChanged>(domainEvent);
+        Assert.Equal(ListId, changed.ListId);
+        Assert.Equal(newExpiry, changed.Expiry);
+        Assert.Equal(changedAt, changed.ChangedAt);
+    }
+
+    [Fact]
     public void Rename_ShouldUpdateNameAndRaiseAGiftListRenamedEvent()
     {
         // Arrange
