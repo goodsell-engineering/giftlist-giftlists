@@ -22,8 +22,14 @@ it publishes** (ARCHITECTURE.md "Contracts: each service owns and publishes its 
 
 | Kind | Types |
 |---|---|
-| Commands it accepts | `CreateGiftList`, `RenameGiftList`, `DeleteGiftList`, `AddGiftItem`, `RemoveGiftItem` |
-| Events it publishes | `GiftListCreatedV1`, `GiftListRenamedV1`, `GiftListDeletedV1`, `GiftItemAddedV1`, `GiftItemRemovedV1` |
+| Commands it accepts | `CreateGiftList`, `RenameGiftList`, `ChangeGiftListExpiry`, `DeleteGiftList`, `AddGiftItem`, `RemoveGiftItem` |
+| Events it publishes | `GiftListCreatedV1`, `GiftListRenamedV1`, `GiftListExpiryChangedV1`, `GiftListExpiredV1`, `GiftListDeletedV1`, `GiftItemAddedV1`, `GiftItemRemovedV1` |
+
+`GiftListExpiredV1` is published by the expiry saga (ARCHITECTURE.md "Sagas: list expiry"), not
+by an interactor, and has no domain-event counterpart: nothing about the list changes when it
+expires. The saga's state and its deferred timeout live in this service's own `giftlist` database
+(`giftListExpirySagas`, `timeouts`) via Rebus.MongoDb. There is no Mongo TTL index, and there
+must never be one — it would delete the document, and an expired list stays visible.
 
 What is deliberately **not** in here: the `GiftList` aggregate, its domain events (`GiftListCreated`
 without the `V1`), `ShareToken`, `GiftListDocument`, `IGiftListRepository`. Domain events are not

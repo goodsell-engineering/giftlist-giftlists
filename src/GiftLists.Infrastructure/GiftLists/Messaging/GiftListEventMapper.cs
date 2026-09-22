@@ -16,6 +16,7 @@ internal static class GiftListEventMapper
         GiftListCreated e => new GiftListCreatedV1(
             e.ListId.Value, e.OwnerId.Value, e.Name.Value, e.Expiry.Value, e.ShareToken.Value, e.CreatedAt),
         GiftListRenamed e => new GiftListRenamedV1(e.ListId.Value, e.Name.Value, e.RenamedAt),
+        GiftListExpiryChanged e => new GiftListExpiryChangedV1(e.ListId.Value, e.Expiry.Value, e.ChangedAt),
         GiftListDeleted e => new GiftListDeletedV1(e.ListId.Value, e.DeletedAt),
         GiftItemAdded e => new GiftItemAddedV1(
             e.ListId.Value, e.ItemId.Value, e.Name.Value, e.Description?.Value, e.Url?.Value, e.AddedAt),
@@ -33,6 +34,7 @@ internal static class GiftListEventMapper
     {
         GiftListCreated e => e.ListId.Value,
         GiftListRenamed e => e.ListId.Value,
+        GiftListExpiryChanged e => e.ListId.Value,
         GiftListDeleted e => e.ListId.Value,
         GiftItemAdded e => e.ListId.Value,
         GiftItemRemoved e => e.ListId.Value,

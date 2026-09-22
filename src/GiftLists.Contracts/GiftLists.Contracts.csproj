@@ -11,16 +11,18 @@
        means for a message contract" makes the type name and namespace part of the wire format,
        because Rebus routes and deserializes on the .NET type name.
 
-       Version 0.1.0 is the split's starting point; GL-27 owns the bump discipline from here.
+       Version 0.1.0 was the split's starting point; GL-27 owns the bump discipline from here.
+       0.2.0 (GL-41): purely additive — the ChangeGiftListExpiry command and the
+       GiftListExpiryChangedV1/GiftListExpiredV1 events. Nothing existing changed shape or name.
        Do not repack a version that is already in the feed — NuGet caches by (id, version), so
        consumers would silently keep the old contract. GL-28's pack-all guard is what turns that
        into a build error. -->
   <PropertyGroup>
     <IsPackable>true</IsPackable>
     <PackageId>GiftLists.Contracts</PackageId>
-    <Version>0.1.0</Version>
+    <Version>0.2.0</Version>
     <Authors>goodsell-engineering</Authors>
-    <Description>GiftLists' entire public wire surface: the commands it accepts (CreateGiftList, RenameGiftList, DeleteGiftList, AddGiftItem, RemoveGiftItem) and the events it publishes (GiftListCreatedV1, GiftListRenamedV1, GiftListDeletedV1, GiftItemAddedV1, GiftItemRemovedV1).</Description>
+    <Description>GiftLists' entire public wire surface: the commands it accepts (CreateGiftList, RenameGiftList, ChangeGiftListExpiry, DeleteGiftList, AddGiftItem, RemoveGiftItem) and the events it publishes (GiftListCreatedV1, GiftListRenamedV1, GiftListExpiryChangedV1, GiftListExpiredV1, GiftListDeletedV1, GiftItemAddedV1, GiftItemRemovedV1).</Description>
   </PropertyGroup>
 
 </Project>

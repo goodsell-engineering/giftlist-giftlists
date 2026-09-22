@@ -34,6 +34,7 @@ public sealed class GiftListEventMapperTests
     private static readonly Guid DeletedListId = new("33333333-3333-3333-3333-333333333333");
     private static readonly Guid ItemAddedListId = new("44444444-4444-4444-4444-444444444444");
     private static readonly Guid ItemRemovedListId = new("55555555-5555-5555-5555-555555555555");
+    private static readonly Guid ExpiryChangedListId = new("99999999-9999-9999-9999-999999999999");
 
     private static readonly Guid AddedItemId = new("66666666-6666-6666-6666-666666666666");
     private static readonly Guid RemovedItemId = new("77777777-7777-7777-7777-777777777777");
@@ -45,6 +46,8 @@ public sealed class GiftListEventMapperTests
     private static readonly DateTimeOffset DeletedAt = new(2026, 3, 6, 11, 17, 32, 234, TimeSpan.Zero);
     private static readonly DateTimeOffset AddedAt = new(2026, 3, 7, 12, 18, 33, 567, TimeSpan.Zero);
     private static readonly DateTimeOffset RemovedAt = new(2026, 3, 8, 13, 19, 34, 891, TimeSpan.Zero);
+    private static readonly DateTimeOffset ExpiryChangedAt = new(2026, 3, 9, 14, 20, 35, 135, TimeSpan.Zero);
+    private static readonly DateTimeOffset NewExpiresAt = new(2026, 5, 1, 12, 0, 0, 246, TimeSpan.Zero);
 
     private const string ListName = "Birthday Wishlist";
     private const string NewListName = "Christmas Wishlist";
@@ -72,6 +75,7 @@ public sealed class GiftListEventMapperTests
         GiftListDeletedEvent(),
         GiftItemAddedEvent(),
         GiftItemRemovedEvent(),
+        GiftListExpiryChangedEvent(),
     ];
 
     public static TheoryData<IDomainEvent, Guid> EveryDomainEventWithItsListId() => new()
@@ -81,6 +85,7 @@ public sealed class GiftListEventMapperTests
         { GiftListDeletedEvent(), DeletedListId },
         { GiftItemAddedEvent(), ItemAddedListId },
         { GiftItemRemovedEvent(), ItemRemovedListId },
+        { GiftListExpiryChangedEvent(), ExpiryChangedListId },
     };
 
     [Fact]
@@ -116,6 +121,22 @@ public sealed class GiftListEventMapperTests
         Assert.Equal(RenamedListId, published.ListId);
         Assert.Equal(NewListName, published.Name);
         Assert.Equal(RenamedAt, published.RenamedAt);
+    }
+
+    [Fact]
+    public void ToIntegrationEvent_ShouldMapGiftListExpiryChangedToGiftListExpiryChangedV1_CarryingEveryField()
+    {
+        // Arrange
+        var domainEvent = GiftListExpiryChangedEvent();
+
+        // Act
+        var integrationEvent = GiftListEventMapper.ToIntegrationEvent(domainEvent);
+
+        // Assert
+        var published = Assert.IsType<GiftListExpiryChangedV1>(integrationEvent);
+        Assert.Equal(ExpiryChangedListId, published.ListId);
+        Assert.Equal(NewExpiresAt, published.ExpiresAt);
+        Assert.Equal(ExpiryChangedAt, published.ChangedAt);
     }
 
     [Fact]
@@ -287,6 +308,11 @@ public sealed class GiftListEventMapperTests
         RenamedAt);
 
     private static GiftListDeleted GiftListDeletedEvent() => new(new GiftListId(DeletedListId), DeletedAt);
+
+    private static GiftListExpiryChanged GiftListExpiryChangedEvent() => new(
+        new GiftListId(ExpiryChangedListId),
+        new ExpiryDate(NewExpiresAt, Now),
+        ExpiryChangedAt);
 
     private static GiftItemAdded GiftItemAddedEvent() => new(
         new GiftListId(ItemAddedListId),

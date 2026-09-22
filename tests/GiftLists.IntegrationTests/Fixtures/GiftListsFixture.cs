@@ -69,11 +69,16 @@ public sealed class GiftListsFixture : IAsyncLifetime
         giftListsBuilder.Logging.AddProvider(Logs);
         giftListsBuilder.Configuration.AddInMemoryCollection(giftListsConfig);
         giftListsBuilder.Services.AddBuildingBlocksMongo(giftListsBuilder.Configuration, DatabaseName);
-        giftListsBuilder.Services.AddBuildingBlocksRebus(giftListsBuilder.Configuration, GiftListsQueueName);
+        // GL-41: the same configure hook and the same post-build subscription call Program.cs
+        // makes, so the expiry saga runs here against real Mongo-backed saga/timeout storage.
+        giftListsBuilder.Services.AddBuildingBlocksRebus(
+            giftListsBuilder.Configuration, GiftListsQueueName, GiftListsRebusConfiguration.Configure);
         giftListsBuilder.Services.AddGiftListsInfrastructure();
         _giftListsHost = giftListsBuilder.Build();
         await _giftListsHost.StartAsync();
         await GiftListsInfrastructureServiceCollectionExtensions.EnsureIndexesAsync(
+            _giftListsHost.Services, CancellationToken.None);
+        await GiftListsInfrastructureServiceCollectionExtensions.SubscribeToOwnEventsAsync(
             _giftListsHost.Services, CancellationToken.None);
 
         Database = _giftListsHost.Services.GetRequiredService<IMongoDatabase>();
@@ -90,6 +95,7 @@ public sealed class GiftListsFixture : IAsyncLifetime
             configure: (configurer, _) => configurer.Routing(r => r.TypeBased()
                 .Map<CreateGiftList>(GiftListsQueueName)
                 .Map<RenameGiftList>(GiftListsQueueName)
+                .Map<ChangeGiftListExpiry>(GiftListsQueueName)
                 .Map<DeleteGiftList>(GiftListsQueueName)
                 .Map<AddGiftItem>(GiftListsQueueName)
                 .Map<RemoveGiftItem>(GiftListsQueueName)));
@@ -110,7 +116,8 @@ public sealed class GiftListsFixture : IAsyncLifetime
     /// CONVENTIONS.md "Testing": isolate by dropping the database between tests, never by restarting a
     /// container. Re-applies the unique shareToken index afterwards — dropping the database drops
     /// it too, and a test relying on it running right after a reset would otherwise pass for the
-    /// wrong reason.
+    /// wrong reason. The drop also takes Rebus's saga and timeout collections with it
+    /// (GL-41), so no earlier test's deferred expiry can fire into a later one.
     /// </summary>
     public async Task ResetAsync()
     {
