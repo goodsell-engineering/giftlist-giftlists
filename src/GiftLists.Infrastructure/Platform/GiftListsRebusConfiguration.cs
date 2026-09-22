@@ -25,12 +25,34 @@ public static class GiftListsRebusConfiguration
 
     public const string TimeoutsCollectionName = "timeouts";
 
+    /// <summary>
+    /// The element name of <c>GiftListExpirySagaData.ListId</c>, the saga's correlation property.
+    /// Named here because two places need to agree on it and neither owns the other: Rebus filters
+    /// saga lookups on it, and <c>GiftListsInfrastructureServiceCollectionExtensions</c> builds the
+    /// unique index over it. A string rather than <c>nameof</c> on the type because the saga data
+    /// is internal to another folder and the BSON element name is what actually has to match —
+    /// <c>GiftListExpirySagaData</c>'s <c>[BsonElement]</c> attributes pin the same literal, and
+    /// its remarks explain why they are not optional.
+    /// </summary>
+    public const string SagaCorrelationElementName = "ListId";
+
     public static RebusConfigurer Configure(RebusConfigurer configurer, IServiceProvider serviceProvider)
     {
         var database = serviceProvider.GetRequiredService<IMongoDatabase>();
 
         return configurer
-            .Sagas(s => s.StoreInMongoDb(database, _ => SagasCollectionName))
+            // automaticallyCreateIndexes: false — the unique correlation index is created at
+            // startup by GiftListsInfrastructureServiceCollectionExtensions.EnsureIndexesAsync
+            // instead, beside every other index this service declares (CONVENTIONS.md
+            // "Persistence": declared beside the repository, applied at startup). Not a style
+            // preference: Rebus.MongoDb creates that index inside a Lazy<Task> on the FIRST saga
+            // insert and then awaits that same cached task on every later insert and update — so
+            // a Mongo blip at exactly that moment faults the task, and the fault is cached for
+            // the life of the process. Expiry would then be dead until a restart (finds and
+            // deletes keep working, which is what makes it hard to spot) while the rest of the
+            // service recovers on its own. Creating it at startup fails loudly instead, before
+            // the service reports healthy, and survives the integration fixture's database drop.
+            .Sagas(s => s.StoreInMongoDb(database, _ => SagasCollectionName, automaticallyCreateIndexes: false))
             .Timeouts(t => t.StoreInMongoDb(database, TimeoutsCollectionName));
     }
 }

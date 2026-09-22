@@ -1,8 +1,11 @@
 using GiftLists.Contracts.GiftLists;
 using GiftLists.Contracts.GiftLists.Events;
 using GiftLists.Domain.Common;
+using GiftLists.Infrastructure.Platform;
 using GiftLists.IntegrationTests.Fixtures;
 using GiftLists.IntegrationTests.Support;
+using MongoDB.Bson;
+using MongoDB.Driver;
 
 namespace GiftLists.IntegrationTests.GiftLists;
 
@@ -22,6 +25,33 @@ public sealed class GiftListExpirySagaTests(GiftListsFixture fixture) : IAsyncLi
     public Task InitializeAsync() => fixture.ResetAsync();
 
     public Task DisposeAsync() => Task.CompletedTask;
+
+    [Fact]
+    public async Task ExpirySagaCollection_ShouldCarryTheUniqueCorrelationIndex_AfterStartup()
+    {
+        // Arrange — ResetAsync has just dropped the database and re-run EnsureIndexesAsync, which
+        // is exactly the state every other test in this suite starts from. That is the point:
+        // Rebus.MongoDb's own lazy index creation would NOT have survived that drop (it happens
+        // once per process, on the first saga insert), so before GL-41's review fold every test
+        // after the first ran against an unindexed saga collection.
+        var indexes = await fixture.Database
+            .GetCollection<BsonDocument>(GiftListsRebusConfiguration.SagasCollectionName)
+            .Indexes.ListAsync();
+        var declared = await indexes.ToListAsync();
+
+        // Act
+        var correlationIndex = declared.SingleOrDefault(
+            index => index["name"].AsString == "listId_unique");
+
+        // Assert — present, unique, and over the correlation element Rebus itself filters saga
+        // lookups on. Uniqueness is the one-saga-per-list guarantee: two rows would mean two
+        // timeouts and two GiftListExpiredV1s for one list.
+        Assert.NotNull(correlationIndex);
+        Assert.True(correlationIndex["unique"].AsBoolean);
+        Assert.Equal(
+            1,
+            correlationIndex["key"][GiftListsRebusConfiguration.SagaCorrelationElementName].AsInt32);
+    }
 
     [Fact]
     public async Task ExpirySaga_ShouldHoldItsStateAndTimeoutInMongo_OnceTheListIsCreated()

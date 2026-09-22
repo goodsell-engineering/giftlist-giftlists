@@ -11,6 +11,7 @@ using GiftLists.Infrastructure.GiftLists.Persistence;
 using GiftLists.Contracts.GiftLists.Events;
 using GiftLists.Infrastructure.Platform.Security;
 using Microsoft.Extensions.DependencyInjection;
+using MongoDB.Bson;
 using MongoDB.Driver;
 using Rebus.Bus;
 using Rebus.Config;
@@ -37,10 +38,29 @@ public static class GiftListsInfrastructureServiceCollectionExtensions
     /// <c>shareToken</c> index (ARCHITECTURE.md "Data model"). Called once from <c>Program.cs</c> after the
     /// host is built, mirroring how Mongo/Rebus health checks are wired ahead of any use case.
     /// </summary>
-    public static Task EnsureIndexesAsync(IServiceProvider serviceProvider, CancellationToken cancellationToken)
+    public static async Task EnsureIndexesAsync(IServiceProvider serviceProvider, CancellationToken cancellationToken)
     {
         var database = serviceProvider.GetRequiredService<IMongoDatabase>();
-        return GiftListRepository.EnsureIndexesAsync(database, cancellationToken);
+        await GiftListRepository.EnsureIndexesAsync(database, cancellationToken);
+        await EnsureExpirySagaIndexesAsync(database, cancellationToken);
+    }
+
+    /// <summary>
+    /// The unique index on the expiry saga's correlation property — the one Rebus.MongoDb would
+    /// otherwise create lazily on first insert (see <c>GiftListsRebusConfiguration</c>, which
+    /// turns that off and says why). Same shape Rebus uses: unique, ascending, on the correlation
+    /// property's own element name, which is what its own lookup filters on. Uniqueness is the
+    /// saga's one-instance-per-list guarantee, not an optimisation: two rows for one list would
+    /// mean two timeouts and two <c>GiftListExpiredV1</c>s.
+    /// </summary>
+    private static Task EnsureExpirySagaIndexesAsync(IMongoDatabase database, CancellationToken cancellationToken)
+    {
+        var sagas = database.GetCollection<BsonDocument>(GiftListsRebusConfiguration.SagasCollectionName);
+        var correlationIndex = new CreateIndexModel<BsonDocument>(
+            Builders<BsonDocument>.IndexKeys.Ascending(GiftListsRebusConfiguration.SagaCorrelationElementName),
+            new CreateIndexOptions { Unique = true, Name = "listId_unique" });
+
+        return sagas.Indexes.CreateOneAsync(correlationIndex, cancellationToken: cancellationToken);
     }
 
     /// <summary>

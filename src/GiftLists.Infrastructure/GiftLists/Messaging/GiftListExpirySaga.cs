@@ -50,6 +50,17 @@ namespace GiftLists.Infrastructure.GiftLists.Messaging;
 /// expiry and let the timeout come due), not faults.
 /// </para>
 /// <para>
+/// <b>A duplicate <see cref="GiftListExpiredV1"/> is possible, by design.</b> The two initiating
+/// events are <c>IAmInitiatedBy</c>, so one redelivered AFTER the saga fired and ended does not
+/// find a saga — it starts a new one, with an expiry already in the past, which comes due at once
+/// and publishes a second <see cref="GiftListExpiredV1"/> for that list. Deliberate rather than
+/// guarded: the alternative is remembering every list that has ever expired, forever, to suppress
+/// a duplicate of an event that is a notification and nothing else. Consumers must tolerate it,
+/// which is the same at-least-once obligation they already carry (CONVENTIONS.md "Messaging") —
+/// and, unlike the redelivery cases above, this one genuinely republishes rather than no-opping,
+/// so it is worth knowing when reading a log with two expiries a day apart for one list.
+/// </para>
+/// <para>
 /// <b>One thing it deliberately does not do:</b> check that the list still exists before
 /// publishing. A deletion that overtakes its own creation on the queue would leave a saga that
 /// eventually announces the expiry of a list that is gone. That needs the two events to be
