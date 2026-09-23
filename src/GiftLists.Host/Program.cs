@@ -1,4 +1,5 @@
 using BuildingBlocks.HealthChecks;
+using BuildingBlocks.Logging;
 using BuildingBlocks.Messaging;
 using BuildingBlocks.Persistence;
 using GiftLists.Infrastructure.Platform;
@@ -6,6 +7,12 @@ using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 
 var builder = WebApplication.CreateBuilder(args);
+
+// GL-45: scope rendering for the console provider WebApplication.CreateBuilder already
+// registers — without this, CorrelationIdIncomingStep's own logger scope pushes correctly but
+// silently, since Microsoft.Extensions.Logging's simple console formatter defaults
+// IncludeScopes to false.
+builder.Services.AddBuildingBlocksLogging();
 
 // GiftLists' own database/queue (ARCHITECTURE.md "Data model", "Tech stack") — wiring these here, ahead of any
 // use case, is what makes "healthy Rebus connection + Mongo connection" (Phase 0 exit

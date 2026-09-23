@@ -18,8 +18,16 @@ internal sealed class EventCapture<TEvent>
     /// </summary>
     public IReadOnlyCollection<TEvent> All => _all.ToArray();
 
-    public void Record(TEvent received)
+    /// <summary>
+    /// GL-45: the <c>rbs2-corr-id</c> header the most recently received message actually carried
+    /// on the wire, if any — see <see cref="EventCapturingHandler{TEvent}"/>, which reads it off
+    /// <c>MessageContext.Current</c> rather than anything the message body itself could claim.
+    /// </summary>
+    public string? LastCorrelationId { get; private set; }
+
+    public void Record(TEvent received, string? correlationId = null)
     {
+        LastCorrelationId = correlationId;
         _all.Enqueue(received);
         Completion.TrySetResult(received);
     }

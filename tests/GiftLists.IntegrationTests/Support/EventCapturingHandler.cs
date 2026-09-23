@@ -1,4 +1,6 @@
 using Rebus.Handlers;
+using Rebus.Messages;
+using Rebus.Pipeline;
 
 namespace GiftLists.IntegrationTests.Support;
 
@@ -7,7 +9,10 @@ internal sealed class EventCapturingHandler<TEvent>(EventCapture<TEvent> capture
 {
     public Task Handle(TEvent message)
     {
-        capture.Record(message);
+        // GL-45: the real header this event was published with, not merely a value some other
+        // part of the pipeline claims to have set.
+        MessageContext.Current.Headers.TryGetValue(Headers.CorrelationId, out var correlationId);
+        capture.Record(message, correlationId);
         return Task.CompletedTask;
     }
 }
