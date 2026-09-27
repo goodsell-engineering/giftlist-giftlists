@@ -34,9 +34,10 @@ public sealed class GiftListDocument
     /// the only writer that filters on it.
     ///
     /// Since GL-68 it is an opaque guard token, not a count of anything. Only a field-scoped
-    /// write (today, a rename) guards on and advances it; element-scoped <c>$push</c>/<c>$pull</c>
-    /// updates leave it untouched by design — bumping it would make a concurrent add spuriously
-    /// conflict a concurrent rename, which is the serialisation GL-68 removed. So it does not
+    /// write (a rename, an expiry move, or — since GL-138 — an item description change) guards on
+    /// and advances it; element-scoped <c>$push</c>/<c>$pull</c> updates leave it untouched by
+    /// design — bumping it would make a concurrent add spuriously conflict a concurrent rename,
+    /// which is the serialisation GL-68 removed. So it does not
     /// mirror <c>GiftList.Version</c> (a list whose items changed reads back LOWER than the
     /// in-memory aggregate that changed them), and it does not count field-scoped changes either:
     /// the value written is the aggregate's total mutation count, so one save that renames AND

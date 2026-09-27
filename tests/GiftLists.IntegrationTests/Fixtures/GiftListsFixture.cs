@@ -98,7 +98,8 @@ public sealed class GiftListsFixture : IAsyncLifetime
                 .Map<ChangeGiftListExpiry>(GiftListsQueueName)
                 .Map<DeleteGiftList>(GiftListsQueueName)
                 .Map<AddGiftItem>(GiftListsQueueName)
-                .Map<RemoveGiftItem>(GiftListsQueueName)));
+                .Map<RemoveGiftItem>(GiftListsQueueName)
+                .Map<ChangeGiftItemDescription>(GiftListsQueueName)));
         _requesterHost = requesterBuilder.Build();
         await _requesterHost.StartAsync();
     }
