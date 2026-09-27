@@ -3,9 +3,10 @@ namespace GiftLists.Domain.GiftLists;
 /// <summary>
 /// A single wish on a <see cref="GiftList"/>. Not an aggregate root of its own — it is reached
 /// only through <see cref="GiftList"/> (CONVENTIONS.md "Persistence" — no <c>IGiftItemRepository</c>) and
-/// raises no domain events itself; <see cref="GiftList.AddItem"/>/<see cref="GiftList.RemoveItem"/>
-/// raise <c>GiftItemAdded</c>/<c>GiftItemRemoved</c> on its behalf, the same way every other
-/// mutation on this aggregate is recorded on the root.
+/// raises no domain events itself; <see cref="GiftList.AddItem"/>/<see cref="GiftList.RemoveItem"/>/
+/// <see cref="GiftList.ChangeItemDescription"/> raise
+/// <c>GiftItemAdded</c>/<c>GiftItemRemoved</c>/<c>GiftItemDescriptionChanged</c> on its behalf, the
+/// same way every other mutation on this aggregate is recorded on the root.
 /// </summary>
 public sealed class GiftItem
 {
@@ -21,9 +22,17 @@ public sealed class GiftItem
 
     public GiftItemName Name { get; }
 
-    public GiftItemDescription? Description { get; }
+    public GiftItemDescription? Description { get; private set; }
 
     public GiftItemUrl? Url { get; }
+
+    /// <summary>
+    /// Sets or clears (<see langword="null"/>) the description. Called only by
+    /// <see cref="GiftList.ChangeItemDescription"/>, which is where <c>Version</c> is bumped and
+    /// <c>GiftItemDescriptionChanged</c> is raised — this entity raises no events of its own (this
+    /// type's own doc comment).
+    /// </summary>
+    internal void ChangeDescription(GiftItemDescription? description) => Description = description;
 
     /// <summary>
     /// The only way to construct a <see cref="GiftItem"/> — used both by

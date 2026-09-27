@@ -82,8 +82,11 @@ internal sealed class GiftListRepository : IGiftListRepository
             return;
         }
 
+        var options = update.ArrayFilters is null
+            ? null
+            : new UpdateOptions { ArrayFilters = update.ArrayFilters };
         var result = await _giftLists.UpdateOneAsync(
-            update.Precondition, update.Change, cancellationToken: cancellationToken);
+            update.Precondition, update.Change, options, cancellationToken);
         if (result.MatchedCount != 0)
         {
             return;

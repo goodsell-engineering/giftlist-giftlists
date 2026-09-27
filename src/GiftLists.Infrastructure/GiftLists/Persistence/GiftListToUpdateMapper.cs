@@ -1,5 +1,6 @@
 using GiftLists.Domain.GiftLists;
 using GiftLists.Domain.GiftLists.Events;
+using MongoDB.Bson;
 using MongoDB.Driver;
 
 namespace GiftLists.Infrastructure.GiftLists.Persistence;
@@ -53,6 +54,19 @@ namespace GiftLists.Infrastructure.GiftLists.Persistence;
 /// writes rather than being dropped. One consequence worth stating plainly: the stored
 /// <c>version</c> now counts field-scoped changes only, not every mutation — see
 /// <see cref="GiftListDocument.Version"/>.</para>
+///
+/// <para><b>Why a description change carries the guard too (D5, GL-138 plan).</b> It is a
+/// <c>$set</c> of one array element's field, not a <c>$push</c>/<c>$pull</c>, so it is
+/// field-scoped in exactly the sense the paragraphs above describe, and it gets both
+/// preconditions: the version guard (so two racing description edits — or a description edit
+/// racing a rename or an expiry move — serialise, and the loser's retry re-reads and stamps a
+/// later <c>ChangedAt</c>) and an element-scoped <c>ElemMatch</c> on the item id (so a
+/// description change for an item a concurrent <c>$pull</c> just removed conflicts loudly
+/// instead of writing a description onto a document the array no longer holds, silently
+/// resurrecting a removed item's field). The <c>$set</c> itself targets the array positionally
+/// (<c>items.$[i].description</c>) because <c>Builders&lt;T&gt;.Update.Set</c> has no typed way
+/// to reach "the one element whose id matches" — a MongoDB array filter, supplied separately, is
+/// how the driver resolves <c>$[i]</c> at write time.</para>
 /// </summary>
 internal static class GiftListToUpdateMapper
 {
@@ -76,6 +90,9 @@ internal static class GiftListToUpdateMapper
         var removedItemIds = new List<Guid>();
         string? renamedTo = null;
         DateTime? expiryMovedTo = null;
+        Guid? descriptionChangedItemId = null;
+        string? descriptionChangedTo = null;
+        var hasDescriptionChange = false;
 
         foreach (var domainEvent in list.DomainEvents)
         {
@@ -106,6 +123,13 @@ internal static class GiftListToUpdateMapper
                 // same reason GiftListToDocumentMapper uses it — the document stores a BSON date.
                 case GiftListExpiryChanged expiryChanged:
                     expiryMovedTo = expiryChanged.Expiry.Value.UtcDateTime;
+                    break;
+
+                // Last one wins, same as rename and expiry — see those cases' own comments.
+                case GiftItemDescriptionChanged descriptionChanged:
+                    descriptionChangedItemId = descriptionChanged.ItemId.Value;
+                    descriptionChangedTo = descriptionChanged.Description?.Value;
+                    hasDescriptionChange = true;
                     break;
 
                 default:
@@ -171,11 +195,30 @@ internal static class GiftListToUpdateMapper
             changes.Add(Builders<GiftListDocument>.Update.Set(d => d.ExpiresAt, expiryMovedTo.Value));
         }
 
-        if (renamedTo is not null || expiryMovedTo is not null)
+        List<ArrayFilterDefinition>? arrayFilters = null;
+
+        if (hasDescriptionChange)
         {
-            // Field-scoped (a rename, an expiry move, or both), so this update — and,
-            // conservatively, anything batched with it — is version-guarded, and is the only
-            // kind of update that advances the stored counter.
+            var itemId = descriptionChangedItemId!.Value;
+
+            // Positional $set — see this type's own doc comment ("Why a description change
+            // carries the guard too") for why an array filter is needed at all, and why it is
+            // element-scoped on top of the version guard added below.
+            changes.Add(Builders<GiftListDocument>.Update.Set("items.$[i].description", descriptionChangedTo));
+            preconditions.Add(Builders<GiftListDocument>.Filter.ElemMatch(
+                d => d.Items, i => i.ItemId == itemId));
+            // The GUID must be encoded the same way BuildingBlocks.Persistence.MongoConventions
+            // registers globally (GuidRepresentation.Standard) — a raw BsonDocument bypasses the
+            // driver's normal class-map serialization, so it will not pick that up on its own.
+            arrayFilters = [new BsonDocumentArrayFilterDefinition<BsonDocument>(
+                new BsonDocument("i.itemId", new BsonBinaryData(itemId, GuidRepresentation.Standard)))];
+        }
+
+        if (renamedTo is not null || expiryMovedTo is not null || hasDescriptionChange)
+        {
+            // Field-scoped (a rename, an expiry move, a description change, or a combination), so
+            // this update — and, conservatively, anything batched with it — is version-guarded,
+            // and is the only kind of update that advances the stored counter.
             //
             // A caveat for whoever first writes an interactor that renames AND adds in one save
             // (none does today; UpdateAsync_ShouldSucceed_WhenTwoMutationsArePerformedBeforeOneSave
@@ -191,6 +234,7 @@ internal static class GiftListToUpdateMapper
 
         return new GiftListUpdate(
             Builders<GiftListDocument>.Filter.And(preconditions),
-            Builders<GiftListDocument>.Update.Combine(changes));
+            Builders<GiftListDocument>.Update.Combine(changes),
+            arrayFilters);
     }
 }

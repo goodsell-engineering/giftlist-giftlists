@@ -1,6 +1,7 @@
 using GiftLists.Application.Common;
 using GiftLists.Application.GiftLists;
 using GiftLists.Application.GiftLists.AddGiftItem;
+using GiftLists.Application.GiftLists.ChangeGiftItemDescription;
 using GiftLists.Application.GiftLists.ChangeGiftListExpiry;
 using GiftLists.Application.GiftLists.CreateGiftList;
 using GiftLists.Application.GiftLists.DeleteGiftList;
@@ -104,6 +105,9 @@ public static class GiftListsInfrastructureServiceCollectionExtensions
         services.AddScoped<IValidator<RemoveGiftItemRequest>, RemoveGiftItemValidator>();
         services.AddScoped<IInteractor<RemoveGiftItemRequest, RemoveGiftItemResponse>, RemoveGiftItemInteractor>();
 
+        services.AddScoped<IValidator<ChangeGiftItemDescriptionRequest>, ChangeGiftItemDescriptionValidator>();
+        services.AddScoped<IInteractor<ChangeGiftItemDescriptionRequest, ChangeGiftItemDescriptionResponse>, ChangeGiftItemDescriptionInteractor>();
+
         // One open-generic decorator pair, applied to every IInteractor<,> registered above,
         // rather than a hand-written decorator per use case — see
         // GiftLists.Application.Common.IInteractor's doc comment for why the specifically-named
@@ -120,6 +124,7 @@ public static class GiftListsInfrastructureServiceCollectionExtensions
         services.AddRebusHandler<DeleteGiftListHandler>();
         services.AddRebusHandler<AddGiftItemHandler>();
         services.AddRebusHandler<RemoveGiftItemHandler>();
+        services.AddRebusHandler<ChangeGiftItemDescriptionHandler>();
 
         // GL-41: the expiry saga is a Rebus handler too, resolved per message like the ones
         // above; its Mongo-backed saga/timeout storage is GiftListsRebusConfiguration's job and
