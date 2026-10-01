@@ -235,8 +235,13 @@ public sealed class ChangeGiftItemDescriptionTests(GiftListsFixture fixture) : I
         // a real race against real infrastructure cannot be forced deterministically from here.
         // The deterministic guarantee behind this is
         // GiftListRepositoryTests.UpdateAsync_ShouldThrowConcurrencyException_WhenAnotherWriterChangedTheDescriptionFirst.
+        // TC-GL-137-P07 / TC-T2-27: the previous version of this test accepted either stored
+        // value, so it could not fail. This version pins the actual guarantee — the stored value
+        // is the one from the event with the later ChangedAt — by capturing both events rather
+        // than just polling for either candidate.
         var ownerId = Guid.NewGuid();
         var (list, itemId) = await GiftListSeeding.SeedListWithItemAsync(fixture, ownerId, "Size M");
+        await using var subscriber = await EventSubscriber<GiftItemDescriptionChangedV1>.StartAsync(fixture.RabbitMqConnectionString);
         var first = new ChangeGiftItemDescription(list.Id.Value, ownerId, itemId.Value, "Size L");
         var second = new ChangeGiftItemDescription(list.Id.Value, ownerId, itemId.Value, "Size XL");
 
@@ -244,33 +249,50 @@ public sealed class ChangeGiftItemDescriptionTests(GiftListsFixture fixture) : I
         await Task.WhenAll(
             fixture.RequesterBus.Send(first),
             fixture.RequesterBus.Send(second));
-        var persisted = await PollUntilOneOfTheseAppliesAsync(list.Id, "Size L", "Size XL", TimeSpan.FromSeconds(20));
+        var captured = await PollUntilTwoEventsAreCapturedAsync(subscriber, list.Id.Value, TimeSpan.FromSeconds(20));
 
-        // Assert
-        Assert.NotNull(persisted);
-        var item = Assert.Single(persisted.Items);
-        Assert.Contains(item.Description?.Value, new[] { "Size L", "Size XL" });
-    }
-
-    private async Task<GiftList?> PollUntilOneOfTheseAppliesAsync(
-        GiftListId listId, string firstCandidate, string secondCandidate, TimeSpan timeout)
-    {
         using var scope = fixture.CreateGiftListsScope();
         var repository = scope.ServiceProvider.GetRequiredService<IGiftListRepository>();
+        var persisted = await repository.FindByIdAsync(list.Id, CancellationToken.None);
+
+        // Assert
+        Assert.Equal(2, captured.Count);
+        var winner = captured[0].ChangedAt > captured[1].ChangedAt ? captured[0] : captured[1];
+        var loser = captured[0].ChangedAt > captured[1].ChangedAt ? captured[1] : captured[0];
+        if (winner.ChangedAt == loser.ChangedAt)
+        {
+            // Both events landed in the same millisecond — GL-135 design "Failure modes", row
+            // "Two changes stamped in the same millisecond", an accepted and documented drift.
+            // Which candidate "should" have won is then undefined, so asserting either way would
+            // be a coin flip dressed up as a guarantee. Reported explicitly rather than passed
+            // silently, per TC-GL-137-P07.
+            Assert.Fail(
+                $"Both captured ChangedAt values were equal ({winner.ChangedAt:O}) — the accepted " +
+                "same-millisecond drift (GL-135 design, 'Failure modes'). Inconclusive for " +
+                "'later ChangedAt wins'; rerun.");
+        }
+
+        Assert.NotNull(persisted);
+        var item = Assert.Single(persisted.Items);
+        Assert.Equal(winner.Description, item.Description?.Value);
+    }
+
+    private static async Task<IReadOnlyList<GiftItemDescriptionChangedV1>> PollUntilTwoEventsAreCapturedAsync(
+        EventSubscriber<GiftItemDescriptionChangedV1> subscriber, Guid listId, TimeSpan timeout)
+    {
         var deadline = DateTime.UtcNow + timeout;
 
         while (DateTime.UtcNow < deadline)
         {
-            var current = await repository.FindByIdAsync(listId, CancellationToken.None);
-            var description = current?.Items.FirstOrDefault()?.Description?.Value;
-            if (description == firstCandidate || description == secondCandidate)
+            var forThisList = subscriber.Capture.All.Where(e => e.ListId == listId).ToArray();
+            if (forThisList.Length >= 2)
             {
-                return current;
+                return forThisList;
             }
 
             await Task.Delay(TimeSpan.FromMilliseconds(100));
         }
 
-        return await repository.FindByIdAsync(listId, CancellationToken.None);
+        return subscriber.Capture.All.Where(e => e.ListId == listId).ToArray();
     }
 }
