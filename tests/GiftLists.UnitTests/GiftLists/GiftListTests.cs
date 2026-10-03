@@ -330,4 +330,82 @@ public sealed class GiftListTests
         Assert.Equal(0, removed.RemovedAt.Ticks % TimeSpan.TicksPerMillisecond);
         Assert.True(removed.RemovedAt <= unaligned);
     }
+
+    [Fact]
+    public void ChangeItemDescription_ShouldSetTheValueBumpVersionAndRaiseGiftItemDescriptionChanged_WhenTheItemExists()
+    {
+        // Arrange
+        var list = CreateList();
+        var itemId = GiftItemId.New();
+        list.AddItem(itemId, new GiftItemName("Coffee grinder"), null, null, Now);
+        list.ClearDomainEvents();
+        var description = new GiftItemDescription("Burr, not blade");
+        var changedAt = Now.AddDays(1);
+        var versionBeforeChange = list.Version;
+
+        // Act
+        list.ChangeItemDescription(itemId, description, changedAt);
+
+        // Assert
+        var item = Assert.Single(list.Items);
+        Assert.Equal(description, item.Description);
+        Assert.Equal(versionBeforeChange + 1, list.Version);
+        var domainEvent = Assert.Single(list.DomainEvents);
+        var changed = Assert.IsType<GiftItemDescriptionChanged>(domainEvent);
+        Assert.Equal(ListId, changed.ListId);
+        Assert.Equal(itemId, changed.ItemId);
+        Assert.Equal(description, changed.Description);
+        Assert.Equal(changedAt, changed.ChangedAt);
+    }
+
+    [Fact]
+    public void ChangeItemDescription_ShouldRaiseTheEventWithANullDescription_WhenCleared()
+    {
+        // Arrange
+        var list = CreateList();
+        var itemId = GiftItemId.New();
+        list.AddItem(itemId, new GiftItemName("Coffee grinder"), new GiftItemDescription("Burr, not blade"), null, Now);
+        list.ClearDomainEvents();
+
+        // Act
+        list.ChangeItemDescription(itemId, null, Now.AddDays(1));
+
+        // Assert
+        var item = Assert.Single(list.Items);
+        Assert.Null(item.Description);
+        var changed = Assert.IsType<GiftItemDescriptionChanged>(Assert.Single(list.DomainEvents));
+        Assert.Null(changed.Description);
+    }
+
+    [Fact]
+    public void ChangeItemDescription_ShouldThrow_WhenTheItemDoesNotExist()
+    {
+        // Arrange
+        var list = CreateList();
+        var unknownItemId = GiftItemId.New();
+
+        // Act
+        var exception = Record.Exception(
+            () => list.ChangeItemDescription(unknownItemId, new GiftItemDescription("Anything"), Now));
+
+        // Assert
+        Assert.IsType<InvalidOperationException>(exception);
+    }
+
+    [Fact]
+    public void ChangeItemDescription_ShouldThrow_WhenTheListHasExpired()
+    {
+        // Arrange
+        var list = CreateList();
+        var itemId = GiftItemId.New();
+        list.AddItem(itemId, new GiftItemName("Coffee grinder"), null, null, Now);
+        list.ClearDomainEvents();
+
+        // Act — Expiry.Value itself is already "expired" per HasExpired's own boundary test above.
+        var exception = Record.Exception(
+            () => list.ChangeItemDescription(itemId, new GiftItemDescription("Too late"), Expiry.Value));
+
+        // Assert
+        Assert.IsType<InvalidOperationException>(exception);
+    }
 }

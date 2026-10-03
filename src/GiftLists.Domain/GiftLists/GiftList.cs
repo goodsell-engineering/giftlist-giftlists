@@ -217,5 +217,37 @@ public sealed class GiftList
         _domainEvents.Add(new GiftItemRemoved(Id, itemId, Timestamps.ToStoredPrecision(removedAt)));
     }
 
+    /// <summary>
+    /// Changes or clears (<see langword="null"/>) an item's description, raising
+    /// <see cref="GiftItemDescriptionChanged"/>.
+    /// </summary>
+    /// <exception cref="InvalidOperationException">
+    /// Two backstops, like <see cref="AddItem"/>'s expiry check and <see cref="RemoveItem"/>'s
+    /// missing-item check: the caller is expected to check the item exists (returning
+    /// <c>GiftListErrors.ItemNotFound</c>) and the list has not expired (returning
+    /// <c>GiftListErrors.Expired</c>) before calling this — CONVENTIONS.md "Errors". Reaching
+    /// either throw indicates a missed check, not a user mistake.
+    /// </exception>
+    public void ChangeItemDescription(GiftItemId itemId, GiftItemDescription? description, DateTimeOffset changedAt)
+    {
+        var item = _items.Find(i => i.Id == itemId);
+        if (item is null)
+        {
+            throw new InvalidOperationException($"No item '{itemId}' exists on gift list '{Id}'.");
+        }
+
+        if (Expiry.HasExpired(changedAt))
+        {
+            throw new InvalidOperationException(
+                "Cannot change an item's description on an expired gift list — the caller must " +
+                "check GiftList.Expiry.HasExpired before calling this.");
+        }
+
+        item.ChangeDescription(description);
+        Version++;
+        // See Rename's own comment — GL-66.
+        _domainEvents.Add(new GiftItemDescriptionChanged(Id, itemId, description, Timestamps.ToStoredPrecision(changedAt)));
+    }
+
     public void ClearDomainEvents() => _domainEvents.Clear();
 }

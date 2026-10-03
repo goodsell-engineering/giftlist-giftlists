@@ -35,10 +35,12 @@ public sealed class GiftListEventMapperTests
     private static readonly Guid ItemAddedListId = new("44444444-4444-4444-4444-444444444444");
     private static readonly Guid ItemRemovedListId = new("55555555-5555-5555-5555-555555555555");
     private static readonly Guid ExpiryChangedListId = new("99999999-9999-9999-9999-999999999999");
+    private static readonly Guid DescriptionChangedListId = new("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa");
 
     private static readonly Guid AddedItemId = new("66666666-6666-6666-6666-666666666666");
     private static readonly Guid RemovedItemId = new("77777777-7777-7777-7777-777777777777");
     private static readonly Guid ListOwnerId = new("88888888-8888-8888-8888-888888888888");
+    private static readonly Guid DescriptionChangedItemId = new("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb");
 
     private static readonly DateTimeOffset Now = new(2026, 3, 4, 9, 15, 30, 123, TimeSpan.Zero);
     private static readonly DateTimeOffset ExpiresAt = new(2026, 4, 1, 12, 0, 0, 456, TimeSpan.Zero);
@@ -48,6 +50,7 @@ public sealed class GiftListEventMapperTests
     private static readonly DateTimeOffset RemovedAt = new(2026, 3, 8, 13, 19, 34, 891, TimeSpan.Zero);
     private static readonly DateTimeOffset ExpiryChangedAt = new(2026, 3, 9, 14, 20, 35, 135, TimeSpan.Zero);
     private static readonly DateTimeOffset NewExpiresAt = new(2026, 5, 1, 12, 0, 0, 246, TimeSpan.Zero);
+    private static readonly DateTimeOffset DescriptionChangedAt = new(2026, 3, 10, 15, 21, 36, 246, TimeSpan.Zero);
 
     private const string ListName = "Birthday Wishlist";
     private const string NewListName = "Christmas Wishlist";
@@ -55,6 +58,7 @@ public sealed class GiftListEventMapperTests
     private const string ItemDescription = "The one with the steam wand";
     private const string ItemUrl = "https://example.com/espresso";
     private const string ShareTokenValue = "aB3xY7zQ1mN5pR9tV2wK4";
+    private const string ChangedDescription = "Size M, navy blue";
 
     /// <summary>
     /// Every domain event this service raises, as a CONSTRUCTED INSTANCE rather than a name.
@@ -76,6 +80,7 @@ public sealed class GiftListEventMapperTests
         GiftItemAddedEvent(),
         GiftItemRemovedEvent(),
         GiftListExpiryChangedEvent(),
+        GiftItemDescriptionChangedEvent(),
     ];
 
     public static TheoryData<IDomainEvent, Guid> EveryDomainEventWithItsListId() => new()
@@ -86,6 +91,7 @@ public sealed class GiftListEventMapperTests
         { GiftItemAddedEvent(), ItemAddedListId },
         { GiftItemRemovedEvent(), ItemRemovedListId },
         { GiftListExpiryChangedEvent(), ExpiryChangedListId },
+        { GiftItemDescriptionChangedEvent(), DescriptionChangedListId },
     };
 
     [Fact]
@@ -214,6 +220,41 @@ public sealed class GiftListEventMapperTests
     }
 
     [Fact]
+    public void ToIntegrationEvent_ShouldMapGiftItemDescriptionChangedToGiftItemDescriptionChangedV1_CarryingEveryField()
+    {
+        // Arrange
+        var domainEvent = GiftItemDescriptionChangedEvent();
+
+        // Act
+        var integrationEvent = GiftListEventMapper.ToIntegrationEvent(domainEvent);
+
+        // Assert
+        var published = Assert.IsType<GiftItemDescriptionChangedV1>(integrationEvent);
+        Assert.Equal(DescriptionChangedListId, published.ListId);
+        Assert.Equal(DescriptionChangedItemId, published.ItemId);
+        Assert.Equal(ChangedDescription, published.Description);
+        Assert.Equal(DescriptionChangedAt, published.ChangedAt);
+    }
+
+    [Fact]
+    public void ToIntegrationEvent_ShouldCarryNullThrough_WhenGiftItemDescriptionChangedIsCleared()
+    {
+        // Arrange
+        var domainEvent = new GiftItemDescriptionChanged(
+            new GiftListId(DescriptionChangedListId),
+            new GiftItemId(DescriptionChangedItemId),
+            Description: null,
+            DescriptionChangedAt);
+
+        // Act
+        var integrationEvent = GiftListEventMapper.ToIntegrationEvent(domainEvent);
+
+        // Assert
+        var published = Assert.IsType<GiftItemDescriptionChangedV1>(integrationEvent);
+        Assert.Null(published.Description);
+    }
+
+    [Fact]
     public void ToIntegrationEvent_ShouldThrow_WhenTheDomainEventHasNoMapping()
     {
         // Arrange — the whole point of the default arm. A new domain event added to the Domain
@@ -326,6 +367,12 @@ public sealed class GiftListEventMapperTests
         new GiftListId(ItemRemovedListId),
         new GiftItemId(RemovedItemId),
         RemovedAt);
+
+    private static GiftItemDescriptionChanged GiftItemDescriptionChangedEvent() => new(
+        new GiftListId(DescriptionChangedListId),
+        new GiftItemId(DescriptionChangedItemId),
+        new GiftItemDescription(ChangedDescription),
+        DescriptionChangedAt);
 
     /// <summary>
     /// A domain event the mapper has never heard of — the stand-in for the sixth event somebody

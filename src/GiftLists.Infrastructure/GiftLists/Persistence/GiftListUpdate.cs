@@ -18,6 +18,12 @@ namespace GiftLists.Infrastructure.GiftLists.Persistence;
 /// See that method's own doc comment.
 /// </param>
 /// <param name="Change">The <c>$push</c>/<c>$pull</c>/<c>$set</c> operators themselves.</param>
+/// <param name="ArrayFilters">
+/// Populated only for a description change, whose <c>$set</c> targets one array element by
+/// position (<c>items.$[i].description</c>) rather than by field name — <see langword="null"/>
+/// for every other update, which needs none.
+/// </param>
 internal sealed record GiftListUpdate(
     FilterDefinition<GiftListDocument> Precondition,
-    UpdateDefinition<GiftListDocument> Change);
+    UpdateDefinition<GiftListDocument> Change,
+    IEnumerable<ArrayFilterDefinition>? ArrayFilters = null);
