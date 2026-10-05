@@ -448,6 +448,126 @@ public sealed class GiftListRepositoryTests(GiftListsFixture fixture) : IAsyncLi
     }
 
     [Fact]
+    public async Task UpdateAsync_ShouldThrowConcurrencyException_WhenAnotherWriterChangedTheDescriptionFirst()
+    {
+        // Arrange — the deterministic guarantee behind
+        // ChangeGiftItemDescriptionTests.ChangeGiftItemDescription_ShouldStoreTheValueWithTheLaterChangedAt_WhenTwoDifferentEditsRace,
+        // built the same way as UpdateAsync_ShouldThrowConcurrencyException_WhenAnotherWriterSavedFirst:
+        // two aggregates loaded from one document and saved in sequence force the race every time.
+        // D5 (plan): a description change is a field-scoped $set, so it carries the same
+        // version guard as a rename, and two racing edits must serialise the same way.
+        var now = DateTimeOffset.UtcNow;
+        var list = GiftList.Create(
+            GiftListId.New(), new OwnerId(Guid.NewGuid()), new GiftListName("Original"),
+            new ExpiryDate(now.AddDays(7), now), new ShareToken(GiftListSeeding.RandomShareToken()), now);
+        var itemId = GiftItemId.New();
+        list.AddItem(itemId, new GiftItemName("Coffee grinder"), new GiftItemDescription("Size M"), null, now);
+        list.ClearDomainEvents();
+
+        using var scope = fixture.CreateGiftListsScope();
+        var repository = scope.ServiceProvider.GetRequiredService<IGiftListRepository>();
+        Assert.True((await repository.AddAsync(list, CancellationToken.None)).IsSuccess);
+
+        var winner = await repository.FindByIdAsync(list.Id, CancellationToken.None);
+        var loser = await repository.FindByIdAsync(list.Id, CancellationToken.None);
+        Assert.NotNull(winner);
+        Assert.NotNull(loser);
+        winner.ChangeItemDescription(itemId, new GiftItemDescription("Size L"), now);
+        loser.ChangeItemDescription(itemId, new GiftItemDescription("Size XL"), now);
+
+        // Act
+        await repository.UpdateAsync(winner, CancellationToken.None);
+        var exception = await Record.ExceptionAsync(
+            () => repository.UpdateAsync(loser, CancellationToken.None));
+
+        // Assert
+        Assert.IsType<GiftListConcurrencyException>(exception);
+        var persisted = await repository.FindByIdAsync(list.Id, CancellationToken.None);
+        Assert.NotNull(persisted);
+        Assert.Equal("Size L", Assert.Single(persisted.Items).Description?.Value);
+    }
+
+    [Fact]
+    public async Task UpdateAsync_ShouldThrowConcurrencyException_WhenTheItemWasRemovedBeforeTheDescriptionChangeSaved()
+    {
+        // Arrange — the element-scoped ElemMatch precondition (D5's second guard): a concurrent
+        // $pull does not move version, so without ElemMatch the $set would still match the
+        // document, modify nothing (the array element is gone), and the interactor would publish
+        // an event for a removed item.
+        var now = DateTimeOffset.UtcNow;
+        var list = GiftList.Create(
+            GiftListId.New(), new OwnerId(Guid.NewGuid()), new GiftListName("Original"),
+            new ExpiryDate(now.AddDays(7), now), new ShareToken(GiftListSeeding.RandomShareToken()), now);
+        var itemId = GiftItemId.New();
+        list.AddItem(itemId, new GiftItemName("Coffee grinder"), new GiftItemDescription("Size M"), null, now);
+        list.ClearDomainEvents();
+
+        using var scope = fixture.CreateGiftListsScope();
+        var repository = scope.ServiceProvider.GetRequiredService<IGiftListRepository>();
+        Assert.True((await repository.AddAsync(list, CancellationToken.None)).IsSuccess);
+
+        var remover = await repository.FindByIdAsync(list.Id, CancellationToken.None);
+        var describer = await repository.FindByIdAsync(list.Id, CancellationToken.None);
+        Assert.NotNull(remover);
+        Assert.NotNull(describer);
+        remover.RemoveItem(itemId, now);
+        describer.ChangeItemDescription(itemId, new GiftItemDescription("Size L"), now);
+
+        // Act
+        await repository.UpdateAsync(remover, CancellationToken.None);
+        var exception = await Record.ExceptionAsync(
+            () => repository.UpdateAsync(describer, CancellationToken.None));
+
+        // Assert
+        Assert.IsType<GiftListConcurrencyException>(exception);
+        var persisted = await repository.FindByIdAsync(list.Id, CancellationToken.None);
+        Assert.NotNull(persisted);
+        Assert.Empty(persisted.Items);
+    }
+
+    [Fact]
+    public async Task UpdateAsync_ShouldSucceedWithoutConflicting_WhenAConcurrentWriterAddedADifferentItemAndAnotherChangedADescription()
+    {
+        // Arrange — extends UpdateAsync_ShouldSucceedWithoutConflicting_WhenAConcurrentWriterAddedADifferentItem
+        // with a description change: an add does not move version ($push carries no version
+        // guard, GL-68), so the two must not conflict even though the description change IS
+        // version-guarded.
+        var now = DateTimeOffset.UtcNow;
+        var list = GiftList.Create(
+            GiftListId.New(), new OwnerId(Guid.NewGuid()), new GiftListName("Shared"),
+            new ExpiryDate(now.AddDays(7), now), new ShareToken(GiftListSeeding.RandomShareToken()), now);
+        var itemId = GiftItemId.New();
+        list.AddItem(itemId, new GiftItemName("Coffee grinder"), new GiftItemDescription("Size M"), null, now);
+        list.ClearDomainEvents();
+
+        using var scope = fixture.CreateGiftListsScope();
+        var repository = scope.ServiceProvider.GetRequiredService<IGiftListRepository>();
+        Assert.True((await repository.AddAsync(list, CancellationToken.None)).IsSuccess);
+
+        var adder = await repository.FindByIdAsync(list.Id, CancellationToken.None);
+        var describer = await repository.FindByIdAsync(list.Id, CancellationToken.None);
+        Assert.NotNull(adder);
+        Assert.NotNull(describer);
+        var newItemId = GiftItemId.New();
+        adder.AddItem(newItemId, new GiftItemName("Board game"), null, null, now);
+        describer.ChangeItemDescription(itemId, new GiftItemDescription("Size L"), now);
+
+        // Act
+        await repository.UpdateAsync(adder, CancellationToken.None);
+        var exception = await Record.ExceptionAsync(
+            () => repository.UpdateAsync(describer, CancellationToken.None));
+
+        // Assert
+        Assert.Null(exception);
+        var persisted = await repository.FindByIdAsync(list.Id, CancellationToken.None);
+        Assert.NotNull(persisted);
+        Assert.Equal(2, persisted.Items.Count);
+        Assert.Single(persisted.Items, item => item.Id == newItemId);
+        var describedItem = Assert.Single(persisted.Items, item => item.Id == itemId);
+        Assert.Equal("Size L", describedItem.Description?.Value);
+    }
+
+    [Fact]
     public async Task UpdateAsync_ShouldThrow_WhenOneSaveBothAddsAndRemovesItems()
     {
         // Arrange — $push and $pull collide on the same 'items' path, so one save cannot carry

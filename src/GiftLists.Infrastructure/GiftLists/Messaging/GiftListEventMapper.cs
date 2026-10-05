@@ -21,6 +21,8 @@ internal static class GiftListEventMapper
         GiftItemAdded e => new GiftItemAddedV1(
             e.ListId.Value, e.ItemId.Value, e.Name.Value, e.Description?.Value, e.Url?.Value, e.AddedAt),
         GiftItemRemoved e => new GiftItemRemovedV1(e.ListId.Value, e.ItemId.Value, e.RemovedAt),
+        GiftItemDescriptionChanged e => new GiftItemDescriptionChangedV1(
+            e.ListId.Value, e.ItemId.Value, e.Description?.Value, e.ChangedAt),
         _ => throw new InvalidOperationException(
             $"No integration event mapping for domain event '{domainEvent.GetType().Name}'."),
     };
@@ -38,6 +40,7 @@ internal static class GiftListEventMapper
         GiftListDeleted e => e.ListId.Value,
         GiftItemAdded e => e.ListId.Value,
         GiftItemRemoved e => e.ListId.Value,
+        GiftItemDescriptionChanged e => e.ListId.Value,
         _ => Guid.Empty,
     };
 }
