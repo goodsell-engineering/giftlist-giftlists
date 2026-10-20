@@ -22,6 +22,7 @@ internal static class GiftListToDocumentMapper
             Name = item.Name.Value,
             Description = item.Description?.Value,
             Url = item.Url?.Value,
+            Priority = item.Priority.Value,
         }).ToList(),
     };
 
@@ -43,5 +44,10 @@ internal static class GiftListToDocumentMapper
             // one of them would now reject — each type's own doc comment has the reasoning,
             // mirroring ExpiryDate.Rehydrate above.
             item.Description is null ? null : GiftItemDescription.Rehydrate(item.Description),
-            item.Url is null ? null : GiftItemUrl.Rehydrate(item.Url))));
+            item.Url is null ? null : GiftItemUrl.Rehydrate(item.Url),
+            // An item stored before GL-146 has no priority: absent reads as the default, not as an
+            // error and not as 0 (GiftItemDocument.Priority's own doc comment). The stored range is
+            // not re-validated on read, for the same reason as the Rehydrate calls above; an
+            // out-of-range stored value would fail loudly in the constructor.
+            item.Priority is { } priority ? new GiftItemPriority(priority) : GiftItemPriority.Default)));
 }

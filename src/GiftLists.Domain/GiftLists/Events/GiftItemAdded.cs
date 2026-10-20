@@ -9,4 +9,5 @@ public sealed record GiftItemAdded(
     GiftItemName Name,
     GiftItemDescription? Description,
     GiftItemUrl? Url,
-    DateTimeOffset AddedAt) : IDomainEvent;
+    DateTimeOffset AddedAt,
+    GiftItemPriority Priority) : IDomainEvent;

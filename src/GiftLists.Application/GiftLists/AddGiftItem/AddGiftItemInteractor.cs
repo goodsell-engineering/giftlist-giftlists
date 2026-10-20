@@ -53,6 +53,10 @@ internal sealed class AddGiftItemInteractor(
             ? null
             : new GiftItemUrl(request.Url);
 
+        // Absent resolves to the default here, so the item, the document and the event always
+        // carry a value (GL-146). The request already passed the validator, so a present value is in range.
+        var priority = request.Priority is { } requested ? new GiftItemPriority(requested) : GiftItemPriority.Default;
+
         // Re-processing safety. Delivery is at-least-once and GL-54 was closed without the shared
         // processedMessages inbox, so a handler being safe to run twice is the ONLY line of defence
         // rather than a second one. ItemId is client-generated and stable across redeliveries, so a
@@ -65,7 +69,7 @@ internal sealed class AddGiftItemInteractor(
             return new AddGiftItemResponse(itemId.Value);
         }
 
-        list.AddItem(itemId, name, description, url, now);
+        list.AddItem(itemId, name, description, url, priority, now);
 
         await giftLists.UpdateAsync(list, cancellationToken);
 

@@ -56,6 +56,12 @@ public static class GiftListErrors
         "Description is too long.",
         ErrorKind.Validation);
 
+    /// <summary>GL-146: an item's priority is 1 to 5 — see <c>GiftLists.Domain.GiftLists.GiftItemPriority</c>.</summary>
+    public static readonly Error ItemPriorityInvalid = new(
+        "giftlist.item_priority_invalid",
+        "Priority must be between 1 and 5.",
+        ErrorKind.Validation);
+
     /// <summary>The safety net behind <see cref="IGiftListRepository.AddAsync"/>'s unique-index write — see that member's own doc comment.</summary>
     public static readonly Error Duplicate = new(
         "giftlist.duplicate",

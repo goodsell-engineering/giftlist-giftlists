@@ -7,4 +7,5 @@ public sealed record AddGiftItemRequest(
     Guid ItemId,
     string Name,
     string? Description,
-    string? Url);
+    string? Url,
+    int? Priority);

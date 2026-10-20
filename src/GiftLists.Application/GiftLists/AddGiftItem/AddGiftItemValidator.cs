@@ -33,6 +33,12 @@ internal sealed class AddGiftItemValidator : IValidator<AddGiftItemRequest>
             return GiftListErrors.ItemDescriptionInvalid;
         }
 
+        // GL-146: absent means the default, so only a present value is range-checked.
+        if (request.Priority is { } priority && !GiftItemPriority.IsValid(priority))
+        {
+            return GiftListErrors.ItemPriorityInvalid;
+        }
+
         return Result.Success();
     }
 }

@@ -15,7 +15,8 @@ internal sealed class AddGiftItemHandler(IInteractor<AddGiftItemRequest, AddGift
     {
         var cancellationToken = MessageContext.Current.GetCancellationToken();
         var request = new AddGiftItemRequest(
-            message.ListId, message.RequesterId, message.ItemId, message.Name, message.Description, message.Url);
+            message.ListId, message.RequesterId, message.ItemId, message.Name, message.Description, message.Url,
+            message.Priority);
         await addGiftItem.Handle(request, cancellationToken);
     }
 }

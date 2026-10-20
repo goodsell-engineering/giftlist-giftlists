@@ -177,7 +177,7 @@ public sealed class GiftList
     /// for a missed check, the same relationship <c>Email.IsValidFormat</c> has to its
     /// constructor.
     /// </exception>
-    public void AddItem(GiftItemId itemId, GiftItemName name, GiftItemDescription? description, GiftItemUrl? url, DateTimeOffset addedAt)
+    public void AddItem(GiftItemId itemId, GiftItemName name, GiftItemDescription? description, GiftItemUrl? url, GiftItemPriority priority, DateTimeOffset addedAt)
     {
         if (Expiry.HasExpired(addedAt))
         {
@@ -187,13 +187,13 @@ public sealed class GiftList
                 "check GiftList.Expiry.HasExpired before calling this.");
         }
 
-        var item = GiftItem.Create(itemId, name, description, url);
+        var item = GiftItem.Create(itemId, name, description, url, priority);
         _items.Add(item);
         Version++;
         // See Rename's own comment — GL-66. The expiry check above intentionally uses the raw
         // addedAt: that is a "was this instant before or after expiry" comparison, not something
         // this aggregate stores or publishes, so it is unaffected by storage precision.
-        _domainEvents.Add(new GiftItemAdded(Id, itemId, name, description, url, Timestamps.ToStoredPrecision(addedAt)));
+        _domainEvents.Add(new GiftItemAdded(Id, itemId, name, description, url, Timestamps.ToStoredPrecision(addedAt), priority));
     }
 
     /// <summary>
@@ -247,6 +247,34 @@ public sealed class GiftList
         Version++;
         // See Rename's own comment — GL-66.
         _domainEvents.Add(new GiftItemDescriptionChanged(Id, itemId, description, Timestamps.ToStoredPrecision(changedAt)));
+    }
+
+    /// <summary>
+    /// Changes an item's priority, raising <see cref="GiftItemPriorityChanged"/>.
+    /// </summary>
+    /// <exception cref="InvalidOperationException">
+    /// The same two backstops as <see cref="ChangeItemDescription"/>: missing item and expired
+    /// list. The interactor returns the matching <c>Result</c> before ever reaching here.
+    /// </exception>
+    public void ChangeItemPriority(GiftItemId itemId, GiftItemPriority priority, DateTimeOffset changedAt)
+    {
+        var item = _items.Find(i => i.Id == itemId);
+        if (item is null)
+        {
+            throw new InvalidOperationException($"No item '{itemId}' exists on gift list '{Id}'.");
+        }
+
+        if (Expiry.HasExpired(changedAt))
+        {
+            throw new InvalidOperationException(
+                "Cannot change an item's priority on an expired gift list — the caller must " +
+                "check GiftList.Expiry.HasExpired before calling this.");
+        }
+
+        item.ChangePriority(priority);
+        Version++;
+        // See Rename's own comment — GL-66.
+        _domainEvents.Add(new GiftItemPriorityChanged(Id, itemId, priority, Timestamps.ToStoredPrecision(changedAt)));
     }
 
     public void ClearDomainEvents() => _domainEvents.Clear();
