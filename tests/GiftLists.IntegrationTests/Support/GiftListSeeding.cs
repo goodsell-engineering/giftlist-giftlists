@@ -1,6 +1,7 @@
 using GiftLists.Application.GiftLists;
 using GiftLists.Domain.GiftLists;
 using GiftLists.IntegrationTests.Fixtures;
+using MongoDB.Driver;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace GiftLists.IntegrationTests.Support;
@@ -99,4 +100,57 @@ internal static class GiftListSeeding
     }
 
     public static string RandomShareToken() => Guid.NewGuid().ToString("N")[..ShareToken.Length];
+
+    /// <summary>Adds another item to an already-seeded list, through the real repository; returns its id.</summary>
+    public static async Task<GiftItemId> AddItemAsync(
+        GiftListsFixture fixture, GiftListId listId, int priority = 3)
+    {
+        using var scope = fixture.CreateGiftListsScope();
+        var repository = scope.ServiceProvider.GetRequiredService<IGiftListRepository>();
+        var loaded = await repository.FindByIdAsync(listId, CancellationToken.None)
+            ?? throw new InvalidOperationException("Seeded list not found.");
+        var itemId = GiftItemId.New();
+        loaded.AddItem(itemId, new GiftItemName("Board game"), null, null, new GiftItemPriority(priority), DateTimeOffset.UtcNow);
+        await repository.UpdateAsync(loaded, CancellationToken.None);
+        return itemId;
+    }
+
+    /// <summary>Removes an item through the real repository, so a "removed item" test's Arrange is deterministic.</summary>
+    public static async Task RemoveItemAsync(GiftListsFixture fixture, GiftListId listId, GiftItemId itemId)
+    {
+        using var scope = fixture.CreateGiftListsScope();
+        var repository = scope.ServiceProvider.GetRequiredService<IGiftListRepository>();
+        var loaded = await repository.FindByIdAsync(listId, CancellationToken.None)
+            ?? throw new InvalidOperationException("Seeded list not found.");
+        loaded.RemoveItem(itemId, DateTimeOffset.UtcNow);
+        await repository.UpdateAsync(loaded, CancellationToken.None);
+    }
+
+    /// <summary>
+    /// Strips the <c>priority</c> field from every item of a stored list, leaving the raw shape a
+    /// pre-GL-146 document had. Raw on purpose: the document type cannot express "absent", and
+    /// hand-writing the old shape would drift from what Mongo really holds.
+    /// </summary>
+    public static async Task StripPriorityFromStoredItemsAsync(GiftListsFixture fixture, GiftListId listId)
+    {
+        var collection = fixture.Database.GetCollection<MongoDB.Bson.BsonDocument>(GiftListsFixture.GiftListsCollectionName);
+        var result = await collection.UpdateOneAsync(
+            MongoDB.Driver.Builders<MongoDB.Bson.BsonDocument>.Filter.Eq(
+                "_id", new MongoDB.Bson.BsonBinaryData(listId.Value, MongoDB.Bson.GuidRepresentation.Standard)),
+            MongoDB.Driver.Builders<MongoDB.Bson.BsonDocument>.Update.Unset("items.$[].priority"));
+        if (result.ModifiedCount != 1)
+        {
+            throw new InvalidOperationException("Could not strip priority from the seeded document.");
+        }
+    }
+
+    /// <summary>The raw stored document of a list, as Mongo holds it.</summary>
+    public static async Task<MongoDB.Bson.BsonDocument> GetRawDocumentAsync(GiftListsFixture fixture, GiftListId listId)
+    {
+        var collection = fixture.Database.GetCollection<MongoDB.Bson.BsonDocument>(GiftListsFixture.GiftListsCollectionName);
+        return await collection.Find(
+                MongoDB.Driver.Builders<MongoDB.Bson.BsonDocument>.Filter.Eq(
+                    "_id", new MongoDB.Bson.BsonBinaryData(listId.Value, MongoDB.Bson.GuidRepresentation.Standard)))
+            .SingleAsync();
+    }
 }
