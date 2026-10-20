@@ -39,8 +39,8 @@ internal static class GiftListSeeding
 
     /// <summary>Seeds a list already carrying one item, for RemoveGiftItem's happy path.</summary>
     public static Task<(GiftList List, GiftItemId ItemId)> SeedListWithItemAsync(
-        GiftListsFixture fixture, Guid ownerId, string? description = null) =>
-        SeedListWithItemAsync(fixture, ownerId, description, expiresAt: null);
+        GiftListsFixture fixture, Guid ownerId, string? description = null, int priority = 3) =>
+        SeedListWithItemAsync(fixture, ownerId, description, expiresAt: null, priority);
 
     /// <summary>
     /// The same as above, but able to seed a list that has ALREADY expired — needed for
@@ -50,7 +50,7 @@ internal static class GiftListSeeding
     /// this goes through <see cref="GiftList.Rehydrate"/> instead of <see cref="GiftList.Create"/>.
     /// </summary>
     public static async Task<(GiftList List, GiftItemId ItemId)> SeedListWithItemAsync(
-        GiftListsFixture fixture, Guid ownerId, string? description, DateTimeOffset? expiresAt)
+        GiftListsFixture fixture, Guid ownerId, string? description, DateTimeOffset? expiresAt, int priority = 3)
     {
         var now = DateTimeOffset.UtcNow;
         GiftList list;
@@ -83,6 +83,7 @@ internal static class GiftListSeeding
             new GiftItemName("Coffee grinder"),
             string.IsNullOrWhiteSpace(description) ? null : new GiftItemDescription(description),
             null,
+            new GiftItemPriority(priority),
             expiresAt is { } already && already <= now ? now.AddDays(-30) : now);
         list.ClearDomainEvents();
 

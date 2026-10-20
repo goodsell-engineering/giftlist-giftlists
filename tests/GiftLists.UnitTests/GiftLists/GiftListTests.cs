@@ -141,7 +141,7 @@ public sealed class GiftListTests
         var url = new GiftItemUrl("https://example.com/grinder");
 
         // Act
-        list.AddItem(itemId, itemName, description, url, Now);
+        list.AddItem(itemId, itemName, description, url, GiftItemPriority.Default, Now);
 
         // Assert
         var item = Assert.Single(list.Items);
@@ -166,7 +166,7 @@ public sealed class GiftListTests
 
         // Act
         var exception = Record.Exception(() =>
-            list.AddItem(GiftItemId.New(), new GiftItemName("Just in time"), null, null, justBeforeExpiry));
+            list.AddItem(GiftItemId.New(), new GiftItemName("Just in time"), null, null, GiftItemPriority.Default, justBeforeExpiry));
 
         // Assert
         Assert.Null(exception);
@@ -181,7 +181,7 @@ public sealed class GiftListTests
 
         // Act
         var exception = Record.Exception(() =>
-            list.AddItem(GiftItemId.New(), new GiftItemName("Too late"), null, null, Expiry.Value));
+            list.AddItem(GiftItemId.New(), new GiftItemName("Too late"), null, null, GiftItemPriority.Default, Expiry.Value));
 
         // Assert
         Assert.IsType<InvalidOperationException>(exception);
@@ -196,7 +196,7 @@ public sealed class GiftListTests
 
         // Act
         var exception = Record.Exception(() =>
-            list.AddItem(GiftItemId.New(), new GiftItemName("Way too late"), null, null, wellAfterExpiry));
+            list.AddItem(GiftItemId.New(), new GiftItemName("Way too late"), null, null, GiftItemPriority.Default, wellAfterExpiry));
 
         // Assert
         Assert.IsType<InvalidOperationException>(exception);
@@ -208,7 +208,7 @@ public sealed class GiftListTests
         // Arrange
         var list = CreateList();
         var itemId = GiftItemId.New();
-        list.AddItem(itemId, new GiftItemName("Coffee grinder"), null, null, Now);
+        list.AddItem(itemId, new GiftItemName("Coffee grinder"), null, null, GiftItemPriority.Default, Now);
         list.ClearDomainEvents();
         var removedAt = Now.AddDays(1);
 
@@ -304,7 +304,7 @@ public sealed class GiftListTests
         var unaligned = Now.AddTicks(7_777);
 
         // Act
-        list.AddItem(GiftItemId.New(), new GiftItemName("Coffee grinder"), null, null, unaligned);
+        list.AddItem(GiftItemId.New(), new GiftItemName("Coffee grinder"), null, null, GiftItemPriority.Default, unaligned);
 
         // Assert
         var added = Assert.IsType<GiftItemAdded>(Assert.Single(list.DomainEvents));
@@ -318,7 +318,7 @@ public sealed class GiftListTests
         // Arrange — deliberately unaligned, same reasoning as Rename's version above (GL-66).
         var list = CreateList();
         var itemId = GiftItemId.New();
-        list.AddItem(itemId, new GiftItemName("Coffee grinder"), null, null, Now);
+        list.AddItem(itemId, new GiftItemName("Coffee grinder"), null, null, GiftItemPriority.Default, Now);
         list.ClearDomainEvents();
         var unaligned = Now.AddTicks(7_777);
 
@@ -337,7 +337,7 @@ public sealed class GiftListTests
         // Arrange
         var list = CreateList();
         var itemId = GiftItemId.New();
-        list.AddItem(itemId, new GiftItemName("Coffee grinder"), null, null, Now);
+        list.AddItem(itemId, new GiftItemName("Coffee grinder"), null, null, GiftItemPriority.Default, Now);
         list.ClearDomainEvents();
         var description = new GiftItemDescription("Burr, not blade");
         var changedAt = Now.AddDays(1);
@@ -364,7 +364,7 @@ public sealed class GiftListTests
         // Arrange
         var list = CreateList();
         var itemId = GiftItemId.New();
-        list.AddItem(itemId, new GiftItemName("Coffee grinder"), new GiftItemDescription("Burr, not blade"), null, Now);
+        list.AddItem(itemId, new GiftItemName("Coffee grinder"), new GiftItemDescription("Burr, not blade"), null, GiftItemPriority.Default, Now);
         list.ClearDomainEvents();
 
         // Act
@@ -398,7 +398,7 @@ public sealed class GiftListTests
         // Arrange
         var list = CreateList();
         var itemId = GiftItemId.New();
-        list.AddItem(itemId, new GiftItemName("Coffee grinder"), null, null, Now);
+        list.AddItem(itemId, new GiftItemName("Coffee grinder"), null, null, GiftItemPriority.Default, Now);
         list.ClearDomainEvents();
 
         // Act — Expiry.Value itself is already "expired" per HasExpired's own boundary test above.
@@ -407,5 +407,78 @@ public sealed class GiftListTests
 
         // Assert
         Assert.IsType<InvalidOperationException>(exception);
+    }
+
+    [Fact]
+    public void AddItem_ShouldRaiseGiftItemAddedCarryingThePriority()
+    {
+        // Arrange
+        var list = CreateList();
+        list.ClearDomainEvents();
+        var itemId = GiftItemId.New();
+
+        // Act
+        list.AddItem(itemId, new GiftItemName("Coffee grinder"), null, null, new GiftItemPriority(5), Now);
+
+        // Assert
+        Assert.Equal(5, Assert.Single(list.Items).Priority.Value);
+        var added = Assert.IsType<GiftItemAdded>(Assert.Single(list.DomainEvents));
+        Assert.Equal(5, added.Priority.Value);
+    }
+
+    [Fact]
+    public void ChangeItemPriority_ShouldSetTheValueBumpVersionAndRaiseGiftItemPriorityChanged_WhenTheItemExists()
+    {
+        // Arrange
+        var list = CreateList();
+        var itemId = GiftItemId.New();
+        list.AddItem(itemId, new GiftItemName("Coffee grinder"), null, null, GiftItemPriority.Default, Now);
+        list.ClearDomainEvents();
+        var versionBefore = list.Version;
+        var changedAt = Now.AddDays(1).AddTicks(1234);
+
+        // Act
+        list.ChangeItemPriority(itemId, new GiftItemPriority(5), changedAt);
+
+        // Assert
+        Assert.Equal(5, Assert.Single(list.Items).Priority.Value);
+        Assert.Equal(versionBefore + 1, list.Version);
+        var changed = Assert.IsType<GiftItemPriorityChanged>(Assert.Single(list.DomainEvents));
+        Assert.Equal(ListId, changed.ListId);
+        Assert.Equal(itemId, changed.ItemId);
+        Assert.Equal(5, changed.Priority.Value);
+        Assert.Equal(0, changed.ChangedAt.Ticks % TimeSpan.TicksPerMillisecond);
+    }
+
+    [Fact]
+    public void ChangeItemPriority_ShouldThrow_WhenTheItemDoesNotExist()
+    {
+        // Arrange
+        var list = CreateList();
+
+        // Act
+        var exception = Record.Exception(
+            () => list.ChangeItemPriority(GiftItemId.New(), new GiftItemPriority(5), Now));
+
+        // Assert
+        Assert.IsType<InvalidOperationException>(exception);
+    }
+
+    [Fact]
+    public void ChangeItemPriority_ShouldThrow_WhenTheListHasExpired()
+    {
+        // Arrange
+        var list = CreateList();
+        var itemId = GiftItemId.New();
+        list.AddItem(itemId, new GiftItemName("Coffee grinder"), null, null, GiftItemPriority.Default, Now);
+        list.ClearDomainEvents();
+
+        // Act
+        var exception = Record.Exception(
+            () => list.ChangeItemPriority(itemId, new GiftItemPriority(5), Expiry.Value));
+
+        // Assert
+        Assert.IsType<InvalidOperationException>(exception);
+        Assert.Equal(3, Assert.Single(list.Items).Priority.Value);
     }
 }

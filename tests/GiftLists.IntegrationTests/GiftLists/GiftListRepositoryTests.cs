@@ -65,6 +65,7 @@ public sealed class GiftListRepositoryTests(GiftListsFixture fixture) : IAsyncLi
             new GiftItemName("Coffee grinder"),
             new GiftItemDescription("Burr, not blade"),
             new GiftItemUrl("https://example.com"),
+            GiftItemPriority.Default,
             now);
 
         using var scope = fixture.CreateGiftListsScope();
@@ -256,7 +257,7 @@ public sealed class GiftListRepositoryTests(GiftListsFixture fixture) : IAsyncLi
 
         // Act — two mutations, one save
         loaded.Rename(new GiftListName("Renamed Once"), now);
-        loaded.AddItem(GiftItemId.New(), new GiftItemName("Coffee grinder"), null, null, now);
+        loaded.AddItem(GiftItemId.New(), new GiftItemName("Coffee grinder"), null, null, GiftItemPriority.Default, now);
         var exception = await Record.ExceptionAsync(
             () => repository.UpdateAsync(loaded, CancellationToken.None));
 
@@ -306,8 +307,8 @@ public sealed class GiftListRepositoryTests(GiftListsFixture fixture) : IAsyncLi
         Assert.NotNull(secondWriter);
         var firstItemId = GiftItemId.New();
         var secondItemId = GiftItemId.New();
-        firstWriter.AddItem(firstItemId, new GiftItemName("Coffee grinder"), null, null, now);
-        secondWriter.AddItem(secondItemId, new GiftItemName("Board game"), null, null, now);
+        firstWriter.AddItem(firstItemId, new GiftItemName("Coffee grinder"), null, null, GiftItemPriority.Default, now);
+        secondWriter.AddItem(secondItemId, new GiftItemName("Board game"), null, null, GiftItemPriority.Default, now);
 
         // Act
         await repository.UpdateAsync(firstWriter, CancellationToken.None);
@@ -355,8 +356,8 @@ public sealed class GiftListRepositoryTests(GiftListsFixture fixture) : IAsyncLi
         Assert.NotNull(firstWriter);
         Assert.NotNull(secondWriter);
         var itemId = GiftItemId.New();
-        firstWriter.AddItem(itemId, new GiftItemName("Coffee grinder"), null, null, now);
-        secondWriter.AddItem(itemId, new GiftItemName("Coffee grinder"), null, null, now);
+        firstWriter.AddItem(itemId, new GiftItemName("Coffee grinder"), null, null, GiftItemPriority.Default, now);
+        secondWriter.AddItem(itemId, new GiftItemName("Coffee grinder"), null, null, GiftItemPriority.Default, now);
 
         // Act
         await repository.UpdateAsync(firstWriter, CancellationToken.None);
@@ -386,7 +387,7 @@ public sealed class GiftListRepositoryTests(GiftListsFixture fixture) : IAsyncLi
             GiftListId.New(), new OwnerId(Guid.NewGuid()), new GiftListName("Shared"),
             new ExpiryDate(now.AddDays(7), now), new ShareToken(GiftListSeeding.RandomShareToken()), now);
         var itemId = GiftItemId.New();
-        list.AddItem(itemId, new GiftItemName("Coffee grinder"), null, null, now);
+        list.AddItem(itemId, new GiftItemName("Coffee grinder"), null, null, GiftItemPriority.Default, now);
         list.ClearDomainEvents();
 
         using var scope = fixture.CreateGiftListsScope();
@@ -461,7 +462,7 @@ public sealed class GiftListRepositoryTests(GiftListsFixture fixture) : IAsyncLi
             GiftListId.New(), new OwnerId(Guid.NewGuid()), new GiftListName("Original"),
             new ExpiryDate(now.AddDays(7), now), new ShareToken(GiftListSeeding.RandomShareToken()), now);
         var itemId = GiftItemId.New();
-        list.AddItem(itemId, new GiftItemName("Coffee grinder"), new GiftItemDescription("Size M"), null, now);
+        list.AddItem(itemId, new GiftItemName("Coffee grinder"), new GiftItemDescription("Size M"), null, GiftItemPriority.Default, now);
         list.ClearDomainEvents();
 
         using var scope = fixture.CreateGiftListsScope();
@@ -499,7 +500,7 @@ public sealed class GiftListRepositoryTests(GiftListsFixture fixture) : IAsyncLi
             GiftListId.New(), new OwnerId(Guid.NewGuid()), new GiftListName("Original"),
             new ExpiryDate(now.AddDays(7), now), new ShareToken(GiftListSeeding.RandomShareToken()), now);
         var itemId = GiftItemId.New();
-        list.AddItem(itemId, new GiftItemName("Coffee grinder"), new GiftItemDescription("Size M"), null, now);
+        list.AddItem(itemId, new GiftItemName("Coffee grinder"), new GiftItemDescription("Size M"), null, GiftItemPriority.Default, now);
         list.ClearDomainEvents();
 
         using var scope = fixture.CreateGiftListsScope();
@@ -537,7 +538,7 @@ public sealed class GiftListRepositoryTests(GiftListsFixture fixture) : IAsyncLi
             GiftListId.New(), new OwnerId(Guid.NewGuid()), new GiftListName("Shared"),
             new ExpiryDate(now.AddDays(7), now), new ShareToken(GiftListSeeding.RandomShareToken()), now);
         var itemId = GiftItemId.New();
-        list.AddItem(itemId, new GiftItemName("Coffee grinder"), new GiftItemDescription("Size M"), null, now);
+        list.AddItem(itemId, new GiftItemName("Coffee grinder"), new GiftItemDescription("Size M"), null, GiftItemPriority.Default, now);
         list.ClearDomainEvents();
 
         using var scope = fixture.CreateGiftListsScope();
@@ -549,7 +550,7 @@ public sealed class GiftListRepositoryTests(GiftListsFixture fixture) : IAsyncLi
         Assert.NotNull(adder);
         Assert.NotNull(describer);
         var newItemId = GiftItemId.New();
-        adder.AddItem(newItemId, new GiftItemName("Board game"), null, null, now);
+        adder.AddItem(newItemId, new GiftItemName("Board game"), null, null, GiftItemPriority.Default, now);
         describer.ChangeItemDescription(itemId, new GiftItemDescription("Size L"), now);
 
         // Act
@@ -579,7 +580,7 @@ public sealed class GiftListRepositoryTests(GiftListsFixture fixture) : IAsyncLi
             GiftListId.New(), new OwnerId(Guid.NewGuid()), new GiftListName("Original"),
             new ExpiryDate(now.AddDays(7), now), new ShareToken(GiftListSeeding.RandomShareToken()), now);
         var existingItemId = GiftItemId.New();
-        list.AddItem(existingItemId, new GiftItemName("Coffee grinder"), null, null, now);
+        list.AddItem(existingItemId, new GiftItemName("Coffee grinder"), null, null, GiftItemPriority.Default, now);
         list.ClearDomainEvents();
 
         using var scope = fixture.CreateGiftListsScope();
@@ -589,7 +590,7 @@ public sealed class GiftListRepositoryTests(GiftListsFixture fixture) : IAsyncLi
         Assert.NotNull(loaded);
 
         // Act — one save carrying both an add and a remove
-        loaded.AddItem(GiftItemId.New(), new GiftItemName("Board game"), null, null, now);
+        loaded.AddItem(GiftItemId.New(), new GiftItemName("Board game"), null, null, GiftItemPriority.Default, now);
         loaded.RemoveItem(existingItemId, now);
         var exception = await Record.ExceptionAsync(
             () => repository.UpdateAsync(loaded, CancellationToken.None));

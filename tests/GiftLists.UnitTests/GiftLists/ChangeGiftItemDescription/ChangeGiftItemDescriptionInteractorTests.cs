@@ -16,7 +16,7 @@ public sealed class ChangeGiftItemDescriptionInteractorTests
             GiftListId.New(), ownerId, new GiftListName("Birthday Wishlist"),
             new ExpiryDate(expiresAt ?? Now.AddDays(7), Now), new ShareToken(new string('a', ShareToken.Length)), Now);
         var itemId = GiftItemId.New();
-        list.AddItem(itemId, new GiftItemName("Coffee grinder"), description, null, Now);
+        list.AddItem(itemId, new GiftItemName("Coffee grinder"), description, null, GiftItemPriority.Default, Now);
         list.ClearDomainEvents();
         repository.Seed(list);
         return (list, itemId);
@@ -88,7 +88,7 @@ public sealed class ChangeGiftItemDescriptionInteractorTests
             ExpiryDate.Rehydrate(Now.AddDays(-1)), new ShareToken(new string('a', ShareToken.Length)),
             Now.AddDays(-30), version: 0, []);
         var itemId = GiftItemId.New();
-        list.AddItem(itemId, new GiftItemName("Coffee grinder"), null, null, Now.AddDays(-30));
+        list.AddItem(itemId, new GiftItemName("Coffee grinder"), null, null, GiftItemPriority.Default, Now.AddDays(-30));
         repository.Seed(list);
         var publisher = new FakeDomainEventPublisher();
         var interactor = new ChangeGiftItemDescriptionInteractor(repository, publisher, new FakeClock(Now));

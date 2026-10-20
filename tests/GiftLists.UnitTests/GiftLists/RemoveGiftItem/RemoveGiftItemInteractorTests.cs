@@ -15,7 +15,7 @@ public sealed class RemoveGiftItemInteractorTests
             GiftListId.New(), ownerId, new GiftListName("Birthday Wishlist"),
             new ExpiryDate(Now.AddDays(7), Now), new ShareToken(new string('a', ShareToken.Length)), Now);
         var itemId = GiftItemId.New();
-        list.AddItem(itemId, new GiftItemName("Coffee grinder"), null, null, Now);
+        list.AddItem(itemId, new GiftItemName("Coffee grinder"), null, null, GiftItemPriority.Default, Now);
         list.ClearDomainEvents();
         repository.Seed(list);
         return (list, itemId);
