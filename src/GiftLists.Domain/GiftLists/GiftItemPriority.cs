@@ -1,7 +1,7 @@
 namespace GiftLists.Domain.GiftLists;
 
 /// <summary>
-/// How much the owner wants an item: 1 to 5, 1 highest (GL-146). Never optional on a
+/// How much the owner wants an item: 1 to 5, 5 the most wanted (GL-146). Never optional on a
 /// <see cref="GiftItem"/>: an item with no stated priority holds <see cref="Default"/>, so every
 /// reader sees a value. Items stored before priorities existed have no stored value; the
 /// persistence mapper reads them as <see cref="Default"/>.

@@ -250,7 +250,7 @@ internal static class GiftListToUpdateMapper
 
         if (renamedTo is not null || expiryMovedTo is not null || hasDescriptionChange || hasPriorityChange)
         {
-            // Field-scoped (a rename, an expiry move, a description change, or a combination), so
+            // Field-scoped (a rename, an expiry move, a description change, a priority change, or a combination), so
             // this update — and, conservatively, anything batched with it — is version-guarded,
             // and is the only kind of update that advances the stored counter.
             //
