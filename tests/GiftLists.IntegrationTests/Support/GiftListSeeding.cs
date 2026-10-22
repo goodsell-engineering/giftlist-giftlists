@@ -1,8 +1,8 @@
 using GiftLists.Application.GiftLists;
 using GiftLists.Domain.GiftLists;
 using GiftLists.IntegrationTests.Fixtures;
-using MongoDB.Driver;
 using Microsoft.Extensions.DependencyInjection;
+using MongoDB.Driver;
 
 namespace GiftLists.IntegrationTests.Support;
 

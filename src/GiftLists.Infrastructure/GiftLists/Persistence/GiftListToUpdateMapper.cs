@@ -77,7 +77,8 @@ internal static class GiftListToUpdateMapper
     /// </summary>
     /// <exception cref="InvalidOperationException">
     /// A bug in the caller or in this mapper, never a user-facing outcome (CONVENTIONS.md "Errors"):
-    /// an unmapped domain event type, or a single save that both adds and removes items.
+    /// an unmapped domain event type, a single save that both adds and removes items, or a single
+    /// save that changes a description and a priority on different items.
     /// </exception>
     public static GiftListUpdate? ToUpdate(GiftList list)
     {
