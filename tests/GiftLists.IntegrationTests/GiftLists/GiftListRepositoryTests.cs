@@ -65,6 +65,7 @@ public sealed class GiftListRepositoryTests(GiftListsFixture fixture) : IAsyncLi
             new GiftItemName("Coffee grinder"),
             new GiftItemDescription("Burr, not blade"),
             new GiftItemUrl("https://example.com"),
+            new GiftItemPriority(5),
             now);
 
         using var scope = fixture.CreateGiftListsScope();
@@ -91,6 +92,8 @@ public sealed class GiftListRepositoryTests(GiftListsFixture fixture) : IAsyncLi
         Assert.Equal(originalItem.Name, item.Name);
         Assert.Equal(originalItem.Description, item.Description);
         Assert.Equal(originalItem.Url, item.Url);
+        Assert.Equal(originalItem.Priority, item.Priority);
+        Assert.Equal(5, item.Priority.Value);
     }
 
     [Fact]
@@ -256,7 +259,7 @@ public sealed class GiftListRepositoryTests(GiftListsFixture fixture) : IAsyncLi
 
         // Act — two mutations, one save
         loaded.Rename(new GiftListName("Renamed Once"), now);
-        loaded.AddItem(GiftItemId.New(), new GiftItemName("Coffee grinder"), null, null, now);
+        loaded.AddItem(GiftItemId.New(), new GiftItemName("Coffee grinder"), null, null, GiftItemPriority.Default, now);
         var exception = await Record.ExceptionAsync(
             () => repository.UpdateAsync(loaded, CancellationToken.None));
 
@@ -306,8 +309,8 @@ public sealed class GiftListRepositoryTests(GiftListsFixture fixture) : IAsyncLi
         Assert.NotNull(secondWriter);
         var firstItemId = GiftItemId.New();
         var secondItemId = GiftItemId.New();
-        firstWriter.AddItem(firstItemId, new GiftItemName("Coffee grinder"), null, null, now);
-        secondWriter.AddItem(secondItemId, new GiftItemName("Board game"), null, null, now);
+        firstWriter.AddItem(firstItemId, new GiftItemName("Coffee grinder"), null, null, GiftItemPriority.Default, now);
+        secondWriter.AddItem(secondItemId, new GiftItemName("Board game"), null, null, GiftItemPriority.Default, now);
 
         // Act
         await repository.UpdateAsync(firstWriter, CancellationToken.None);
@@ -355,8 +358,8 @@ public sealed class GiftListRepositoryTests(GiftListsFixture fixture) : IAsyncLi
         Assert.NotNull(firstWriter);
         Assert.NotNull(secondWriter);
         var itemId = GiftItemId.New();
-        firstWriter.AddItem(itemId, new GiftItemName("Coffee grinder"), null, null, now);
-        secondWriter.AddItem(itemId, new GiftItemName("Coffee grinder"), null, null, now);
+        firstWriter.AddItem(itemId, new GiftItemName("Coffee grinder"), null, null, GiftItemPriority.Default, now);
+        secondWriter.AddItem(itemId, new GiftItemName("Coffee grinder"), null, null, GiftItemPriority.Default, now);
 
         // Act
         await repository.UpdateAsync(firstWriter, CancellationToken.None);
@@ -386,7 +389,7 @@ public sealed class GiftListRepositoryTests(GiftListsFixture fixture) : IAsyncLi
             GiftListId.New(), new OwnerId(Guid.NewGuid()), new GiftListName("Shared"),
             new ExpiryDate(now.AddDays(7), now), new ShareToken(GiftListSeeding.RandomShareToken()), now);
         var itemId = GiftItemId.New();
-        list.AddItem(itemId, new GiftItemName("Coffee grinder"), null, null, now);
+        list.AddItem(itemId, new GiftItemName("Coffee grinder"), null, null, GiftItemPriority.Default, now);
         list.ClearDomainEvents();
 
         using var scope = fixture.CreateGiftListsScope();
@@ -461,7 +464,7 @@ public sealed class GiftListRepositoryTests(GiftListsFixture fixture) : IAsyncLi
             GiftListId.New(), new OwnerId(Guid.NewGuid()), new GiftListName("Original"),
             new ExpiryDate(now.AddDays(7), now), new ShareToken(GiftListSeeding.RandomShareToken()), now);
         var itemId = GiftItemId.New();
-        list.AddItem(itemId, new GiftItemName("Coffee grinder"), new GiftItemDescription("Size M"), null, now);
+        list.AddItem(itemId, new GiftItemName("Coffee grinder"), new GiftItemDescription("Size M"), null, GiftItemPriority.Default, now);
         list.ClearDomainEvents();
 
         using var scope = fixture.CreateGiftListsScope();
@@ -499,7 +502,7 @@ public sealed class GiftListRepositoryTests(GiftListsFixture fixture) : IAsyncLi
             GiftListId.New(), new OwnerId(Guid.NewGuid()), new GiftListName("Original"),
             new ExpiryDate(now.AddDays(7), now), new ShareToken(GiftListSeeding.RandomShareToken()), now);
         var itemId = GiftItemId.New();
-        list.AddItem(itemId, new GiftItemName("Coffee grinder"), new GiftItemDescription("Size M"), null, now);
+        list.AddItem(itemId, new GiftItemName("Coffee grinder"), new GiftItemDescription("Size M"), null, GiftItemPriority.Default, now);
         list.ClearDomainEvents();
 
         using var scope = fixture.CreateGiftListsScope();
@@ -526,6 +529,86 @@ public sealed class GiftListRepositoryTests(GiftListsFixture fixture) : IAsyncLi
     }
 
     [Fact]
+    public async Task UpdateAsync_ShouldThrowConcurrencyException_WhenAnotherWriterChangedTheDescriptionBeforeThePriorityChangeSaved()
+    {
+        // Arrange — TC-GL-146-14 step 2. The description write moves the version, so the priority
+        // write (also version-guarded) must conflict; the loser's retry re-reads and lands.
+        var now = DateTimeOffset.UtcNow;
+        var list = GiftList.Create(
+            GiftListId.New(), new OwnerId(Guid.NewGuid()), new GiftListName("Original"),
+            new ExpiryDate(now.AddDays(7), now), new ShareToken(GiftListSeeding.RandomShareToken()), now);
+        var itemId = GiftItemId.New();
+        list.AddItem(itemId, new GiftItemName("Coffee grinder"), null, null, GiftItemPriority.Default, now);
+        list.ClearDomainEvents();
+
+        using var scope = fixture.CreateGiftListsScope();
+        var repository = scope.ServiceProvider.GetRequiredService<IGiftListRepository>();
+        Assert.True((await repository.AddAsync(list, CancellationToken.None)).IsSuccess);
+
+        var copyA = await repository.FindByIdAsync(list.Id, CancellationToken.None);
+        var copyB = await repository.FindByIdAsync(list.Id, CancellationToken.None);
+        Assert.NotNull(copyA);
+        Assert.NotNull(copyB);
+        copyA.ChangeItemDescription(itemId, new GiftItemDescription("Size L"), now);
+        copyB.ChangeItemPriority(itemId, new GiftItemPriority(2), now);
+
+        // Act
+        await repository.UpdateAsync(copyA, CancellationToken.None);
+        var exception = await Record.ExceptionAsync(
+            () => repository.UpdateAsync(copyB, CancellationToken.None));
+
+        // Assert
+        Assert.IsType<GiftListConcurrencyException>(exception);
+        var persisted = await repository.FindByIdAsync(list.Id, CancellationToken.None);
+        Assert.NotNull(persisted);
+        var item = Assert.Single(persisted.Items);
+        Assert.Equal("Size L", item.Description?.Value);
+        Assert.Equal(3, item.Priority.Value);
+    }
+
+    [Fact]
+    public async Task UpdateAsync_ShouldThrowConcurrencyException_WhenTheItemWasRemovedBeforeThePriorityChangeSaved()
+    {
+        // Arrange — TC-GL-146-32. $pull does not move the version, so only the element-scoped
+        // ElemMatch precondition on the priority arm catches this. Without it the $set matches
+        // the document, changes nothing, and the interactor publishes an event for a removed item.
+        var now = DateTimeOffset.UtcNow;
+        var list = GiftList.Create(
+            GiftListId.New(), new OwnerId(Guid.NewGuid()), new GiftListName("Original"),
+            new ExpiryDate(now.AddDays(7), now), new ShareToken(GiftListSeeding.RandomShareToken()), now);
+        var itemId = GiftItemId.New();
+        list.AddItem(itemId, new GiftItemName("Coffee grinder"), null, null, GiftItemPriority.Default, now);
+        list.ClearDomainEvents();
+
+        using var scope = fixture.CreateGiftListsScope();
+        var repository = scope.ServiceProvider.GetRequiredService<IGiftListRepository>();
+        Assert.True((await repository.AddAsync(list, CancellationToken.None)).IsSuccess);
+
+        var copyA = await repository.FindByIdAsync(list.Id, CancellationToken.None);
+        var copyB = await repository.FindByIdAsync(list.Id, CancellationToken.None);
+        Assert.NotNull(copyA);
+        Assert.NotNull(copyB);
+        Assert.Equal(3, Assert.Single(copyA.Items).Priority.Value);
+        Assert.Equal(3, Assert.Single(copyB.Items).Priority.Value);
+        copyA.RemoveItem(itemId, now);
+        copyB.ChangeItemPriority(itemId, new GiftItemPriority(5), now);
+
+        // Act
+        await repository.UpdateAsync(copyA, CancellationToken.None);
+        var exception = await Record.ExceptionAsync(
+            () => repository.UpdateAsync(copyB, CancellationToken.None));
+
+        // Assert
+        Assert.IsType<GiftListConcurrencyException>(exception);
+        var persisted = await repository.FindByIdAsync(list.Id, CancellationToken.None);
+        Assert.NotNull(persisted);
+        Assert.Empty(persisted.Items);
+        var raw = await GiftListSeeding.GetRawDocumentAsync(fixture, list.Id);
+        Assert.Empty(raw["items"].AsBsonArray);
+        Assert.DoesNotMatch(@"""priority""\s*:\s*5", MongoDB.Bson.BsonExtensionMethods.ToJson(raw));
+    }
+
+    [Fact]
     public async Task UpdateAsync_ShouldSucceedWithoutConflicting_WhenAConcurrentWriterAddedADifferentItemAndAnotherChangedADescription()
     {
         // Arrange — extends UpdateAsync_ShouldSucceedWithoutConflicting_WhenAConcurrentWriterAddedADifferentItem
@@ -537,7 +620,7 @@ public sealed class GiftListRepositoryTests(GiftListsFixture fixture) : IAsyncLi
             GiftListId.New(), new OwnerId(Guid.NewGuid()), new GiftListName("Shared"),
             new ExpiryDate(now.AddDays(7), now), new ShareToken(GiftListSeeding.RandomShareToken()), now);
         var itemId = GiftItemId.New();
-        list.AddItem(itemId, new GiftItemName("Coffee grinder"), new GiftItemDescription("Size M"), null, now);
+        list.AddItem(itemId, new GiftItemName("Coffee grinder"), new GiftItemDescription("Size M"), null, GiftItemPriority.Default, now);
         list.ClearDomainEvents();
 
         using var scope = fixture.CreateGiftListsScope();
@@ -549,7 +632,7 @@ public sealed class GiftListRepositoryTests(GiftListsFixture fixture) : IAsyncLi
         Assert.NotNull(adder);
         Assert.NotNull(describer);
         var newItemId = GiftItemId.New();
-        adder.AddItem(newItemId, new GiftItemName("Board game"), null, null, now);
+        adder.AddItem(newItemId, new GiftItemName("Board game"), null, null, GiftItemPriority.Default, now);
         describer.ChangeItemDescription(itemId, new GiftItemDescription("Size L"), now);
 
         // Act
@@ -579,7 +662,7 @@ public sealed class GiftListRepositoryTests(GiftListsFixture fixture) : IAsyncLi
             GiftListId.New(), new OwnerId(Guid.NewGuid()), new GiftListName("Original"),
             new ExpiryDate(now.AddDays(7), now), new ShareToken(GiftListSeeding.RandomShareToken()), now);
         var existingItemId = GiftItemId.New();
-        list.AddItem(existingItemId, new GiftItemName("Coffee grinder"), null, null, now);
+        list.AddItem(existingItemId, new GiftItemName("Coffee grinder"), null, null, GiftItemPriority.Default, now);
         list.ClearDomainEvents();
 
         using var scope = fixture.CreateGiftListsScope();
@@ -589,7 +672,7 @@ public sealed class GiftListRepositoryTests(GiftListsFixture fixture) : IAsyncLi
         Assert.NotNull(loaded);
 
         // Act — one save carrying both an add and a remove
-        loaded.AddItem(GiftItemId.New(), new GiftItemName("Board game"), null, null, now);
+        loaded.AddItem(GiftItemId.New(), new GiftItemName("Board game"), null, null, GiftItemPriority.Default, now);
         loaded.RemoveItem(existingItemId, now);
         var exception = await Record.ExceptionAsync(
             () => repository.UpdateAsync(loaded, CancellationToken.None));

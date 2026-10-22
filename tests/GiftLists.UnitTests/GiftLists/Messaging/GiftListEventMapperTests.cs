@@ -35,6 +35,9 @@ public sealed class GiftListEventMapperTests
     private static readonly Guid ItemAddedListId = new("44444444-4444-4444-4444-444444444444");
     private static readonly Guid ItemRemovedListId = new("55555555-5555-5555-5555-555555555555");
     private static readonly Guid ExpiryChangedListId = new("99999999-9999-9999-9999-999999999999");
+    private static readonly Guid PriorityChangedListId = new("cccccccc-cccc-cccc-cccc-cccccccccccc");
+    private static readonly Guid PriorityChangedItemId = new("dddddddd-dddd-dddd-dddd-dddddddddddd");
+    private static readonly DateTimeOffset PriorityChangedAt = new(2026, 4, 11, 9, 8, 7, 654, TimeSpan.Zero);
     private static readonly Guid DescriptionChangedListId = new("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa");
 
     private static readonly Guid AddedItemId = new("66666666-6666-6666-6666-666666666666");
@@ -81,6 +84,7 @@ public sealed class GiftListEventMapperTests
         GiftItemRemovedEvent(),
         GiftListExpiryChangedEvent(),
         GiftItemDescriptionChangedEvent(),
+        GiftItemPriorityChangedEvent(),
     ];
 
     public static TheoryData<IDomainEvent, Guid> EveryDomainEventWithItsListId() => new()
@@ -92,6 +96,7 @@ public sealed class GiftListEventMapperTests
         { GiftItemRemovedEvent(), ItemRemovedListId },
         { GiftListExpiryChangedEvent(), ExpiryChangedListId },
         { GiftItemDescriptionChangedEvent(), DescriptionChangedListId },
+        { GiftItemPriorityChangedEvent(), PriorityChangedListId },
     };
 
     [Fact]
@@ -177,6 +182,7 @@ public sealed class GiftListEventMapperTests
         Assert.Equal(ItemDescription, published.Description);
         Assert.Equal(ItemUrl, published.Url);
         Assert.Equal(AddedAt, published.AddedAt);
+        Assert.Equal(5, published.Priority);
     }
 
     [Fact]
@@ -191,7 +197,8 @@ public sealed class GiftListEventMapperTests
             new GiftItemName(ItemName),
             Description: null,
             Url: null,
-            AddedAt);
+            AddedAt,
+            new GiftItemPriority(4));
 
         // Act
         var integrationEvent = GiftListEventMapper.ToIntegrationEvent(domainEvent);
@@ -217,6 +224,23 @@ public sealed class GiftListEventMapperTests
         Assert.Equal(ItemRemovedListId, published.ListId);
         Assert.Equal(RemovedItemId, published.ItemId);
         Assert.Equal(RemovedAt, published.RemovedAt);
+    }
+
+    [Fact]
+    public void ToIntegrationEvent_ShouldMapGiftItemPriorityChangedToGiftItemPriorityChangedV1_CarryingEveryField()
+    {
+        // Arrange
+        var domainEvent = GiftItemPriorityChangedEvent();
+
+        // Act
+        var integrationEvent = GiftListEventMapper.ToIntegrationEvent(domainEvent);
+
+        // Assert
+        var published = Assert.IsType<GiftItemPriorityChangedV1>(integrationEvent);
+        Assert.Equal(PriorityChangedListId, published.ListId);
+        Assert.Equal(PriorityChangedItemId, published.ItemId);
+        Assert.Equal(2, published.Priority);
+        Assert.Equal(PriorityChangedAt, published.ChangedAt);
     }
 
     [Fact]
@@ -361,12 +385,19 @@ public sealed class GiftListEventMapperTests
         new GiftItemName(ItemName),
         new GiftItemDescription(ItemDescription),
         new GiftItemUrl(ItemUrl),
-        AddedAt);
+        AddedAt,
+        new GiftItemPriority(5));
 
     private static GiftItemRemoved GiftItemRemovedEvent() => new(
         new GiftListId(ItemRemovedListId),
         new GiftItemId(RemovedItemId),
         RemovedAt);
+
+    private static GiftItemPriorityChanged GiftItemPriorityChangedEvent() => new(
+        new GiftListId(PriorityChangedListId),
+        new GiftItemId(PriorityChangedItemId),
+        new GiftItemPriority(2),
+        PriorityChangedAt);
 
     private static GiftItemDescriptionChanged GiftItemDescriptionChangedEvent() => new(
         new GiftListId(DescriptionChangedListId),

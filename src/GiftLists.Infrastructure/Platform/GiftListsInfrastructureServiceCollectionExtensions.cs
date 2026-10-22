@@ -2,6 +2,7 @@ using GiftLists.Application.Common;
 using GiftLists.Application.GiftLists;
 using GiftLists.Application.GiftLists.AddGiftItem;
 using GiftLists.Application.GiftLists.ChangeGiftItemDescription;
+using GiftLists.Application.GiftLists.ChangeGiftItemPriority;
 using GiftLists.Application.GiftLists.ChangeGiftListExpiry;
 using GiftLists.Application.GiftLists.CreateGiftList;
 using GiftLists.Application.GiftLists.DeleteGiftList;
@@ -107,6 +108,8 @@ public static class GiftListsInfrastructureServiceCollectionExtensions
 
         services.AddScoped<IValidator<ChangeGiftItemDescriptionRequest>, ChangeGiftItemDescriptionValidator>();
         services.AddScoped<IInteractor<ChangeGiftItemDescriptionRequest, ChangeGiftItemDescriptionResponse>, ChangeGiftItemDescriptionInteractor>();
+        services.AddScoped<IValidator<ChangeGiftItemPriorityRequest>, ChangeGiftItemPriorityValidator>();
+        services.AddScoped<IInteractor<ChangeGiftItemPriorityRequest, ChangeGiftItemPriorityResponse>, ChangeGiftItemPriorityInteractor>();
 
         // One open-generic decorator pair, applied to every IInteractor<,> registered above,
         // rather than a hand-written decorator per use case — see
@@ -125,6 +128,7 @@ public static class GiftListsInfrastructureServiceCollectionExtensions
         services.AddRebusHandler<AddGiftItemHandler>();
         services.AddRebusHandler<RemoveGiftItemHandler>();
         services.AddRebusHandler<ChangeGiftItemDescriptionHandler>();
+        services.AddRebusHandler<ChangeGiftItemPriorityHandler>();
 
         // GL-41: the expiry saga is a Rebus handler too, resolved per message like the ones
         // above; its Mongo-backed saga/timeout storage is GiftListsRebusConfiguration's job and

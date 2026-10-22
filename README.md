@@ -22,8 +22,8 @@ it publishes** (ARCHITECTURE.md "Contracts: each service owns and publishes its 
 
 | Kind | Types |
 |---|---|
-| Commands it accepts | `CreateGiftList`, `RenameGiftList`, `ChangeGiftListExpiry`, `DeleteGiftList`, `AddGiftItem`, `RemoveGiftItem`, `ChangeGiftItemDescription` |
-| Events it publishes | `GiftListCreatedV1`, `GiftListRenamedV1`, `GiftListExpiryChangedV1`, `GiftListExpiredV1`, `GiftListDeletedV1`, `GiftItemAddedV1`, `GiftItemRemovedV1`, `GiftItemDescriptionChangedV1` |
+| Commands it accepts | `CreateGiftList`, `RenameGiftList`, `ChangeGiftListExpiry`, `DeleteGiftList`, `AddGiftItem`, `RemoveGiftItem`, `ChangeGiftItemDescription`, `ChangeGiftItemPriority` |
+| Events it publishes | `GiftListCreatedV1`, `GiftListRenamedV1`, `GiftListExpiryChangedV1`, `GiftListExpiredV1`, `GiftListDeletedV1`, `GiftItemAddedV1`, `GiftItemRemovedV1`, `GiftItemDescriptionChangedV1`, `GiftItemPriorityChangedV1` |
 
 `GiftListExpiredV1` is published by the expiry saga (ARCHITECTURE.md "Sagas: list expiry"), not
 by an interactor, and has no domain-event counterpart: nothing about the list changes when it

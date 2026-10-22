@@ -121,7 +121,7 @@ public sealed class GiftListToDocumentMapperTests
             new ExpiryDate(now.AddDays(7), now),
             new ShareToken(new string('a', 21)),
             now);
-        list.AddItem(GiftItemId.New(), new GiftItemName("Coffee grinder"), null, null, now);
+        list.AddItem(GiftItemId.New(), new GiftItemName("Coffee grinder"), null, null, GiftItemPriority.Default, now);
 
         // Act
         var document = GiftListToDocumentMapper.ToDocument(list);
@@ -130,5 +130,46 @@ public sealed class GiftListToDocumentMapperTests
         var item = Assert.Single(document.Items);
         Assert.Null(item.Description);
         Assert.Null(item.Url);
+    }
+
+    [Fact]
+    public void ToAggregate_ShouldRehydrateAnAbsentPriorityAs3()
+    {
+        // Arrange — an item stored before GL-146 has no priority field, so the document's int? is null.
+        var document = DocumentWithOneItem(new GiftItemDocument
+        {
+            ItemId = Guid.NewGuid(),
+            Name = "Coffee grinder",
+            Priority = null,
+        });
+
+        // Act
+        var list = GiftListToDocumentMapper.ToAggregate(document);
+
+        // Assert
+        Assert.Equal(3, Assert.Single(list.Items).Priority.Value);
+    }
+
+    [Fact]
+    public void ToDocument_ThenToAggregate_ShouldRoundTripAStoredPriority()
+    {
+        // Arrange
+        var now = DateTimeOffset.UtcNow;
+        var list = GiftList.Create(
+            new GiftListId(Guid.NewGuid()),
+            new OwnerId(Guid.NewGuid()),
+            new GiftListName("Birthday Wishlist"),
+            new ExpiryDate(now.AddDays(7), now),
+            new ShareToken(new string('a', 21)),
+            now);
+        list.AddItem(GiftItemId.New(), new GiftItemName("Coffee grinder"), null, null, new GiftItemPriority(5), now);
+
+        // Act
+        var document = GiftListToDocumentMapper.ToDocument(list);
+        var reloaded = GiftListToDocumentMapper.ToAggregate(document);
+
+        // Assert
+        Assert.Equal(5, Assert.Single(document.Items).Priority);
+        Assert.Equal(5, Assert.Single(reloaded.Items).Priority.Value);
     }
 }

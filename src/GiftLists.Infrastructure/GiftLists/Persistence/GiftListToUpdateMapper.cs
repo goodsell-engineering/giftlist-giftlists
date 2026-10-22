@@ -77,7 +77,8 @@ internal static class GiftListToUpdateMapper
     /// </summary>
     /// <exception cref="InvalidOperationException">
     /// A bug in the caller or in this mapper, never a user-facing outcome (CONVENTIONS.md "Errors"):
-    /// an unmapped domain event type, or a single save that both adds and removes items.
+    /// an unmapped domain event type, a single save that both adds and removes items, or a single
+    /// save that changes a description and a priority on different items.
     /// </exception>
     public static GiftListUpdate? ToUpdate(GiftList list)
     {
@@ -93,6 +94,8 @@ internal static class GiftListToUpdateMapper
         Guid? descriptionChangedItemId = null;
         string? descriptionChangedTo = null;
         var hasDescriptionChange = false;
+        Guid? priorityChangedItemId = null;
+        int? priorityChangedTo = null;
 
         foreach (var domainEvent in list.DomainEvents)
         {
@@ -105,6 +108,7 @@ internal static class GiftListToUpdateMapper
                         Name = added.Name.Value,
                         Description = added.Description?.Value,
                         Url = added.Url?.Value,
+                        Priority = added.Priority.Value,
                     });
                     break;
 
@@ -130,6 +134,12 @@ internal static class GiftListToUpdateMapper
                     descriptionChangedItemId = descriptionChanged.ItemId.Value;
                     descriptionChangedTo = descriptionChanged.Description?.Value;
                     hasDescriptionChange = true;
+                    break;
+
+                // Last one wins, same as the description case.
+                case GiftItemPriorityChanged priorityChanged:
+                    priorityChangedItemId = priorityChanged.ItemId.Value;
+                    priorityChangedTo = priorityChanged.Priority.Value;
                     break;
 
                 default:
@@ -197,14 +207,39 @@ internal static class GiftListToUpdateMapper
 
         List<ArrayFilterDefinition>? arrayFilters = null;
 
-        if (hasDescriptionChange)
+        // Description and priority changes both write to one element through the single array
+        // filter "i". They may share an item (one filter, two $set paths); two different items in
+        // one save would need two filters, which nothing needs, so it throws rather than writing
+        // to the wrong element.
+        if (hasDescriptionChange && priorityChangedItemId is not null &&
+            descriptionChangedItemId != priorityChangedItemId)
         {
-            var itemId = descriptionChangedItemId!.Value;
+            throw new InvalidOperationException(
+                "A single save cannot change a description and a priority on different items: both " +
+                "use the one array filter 'i'. No interactor does this today; if one needs to, it must save twice.");
+        }
 
+        var hasPriorityChange = priorityChangedItemId is not null;
+        var elementItemId = hasDescriptionChange ? descriptionChangedItemId : priorityChangedItemId;
+
+        if (elementItemId is { } itemId)
+        {
             // Positional $set — see this type's own doc comment ("Why a description change
             // carries the guard too") for why an array filter is needed at all, and why it is
-            // element-scoped on top of the version guard added below.
-            changes.Add(Builders<GiftListDocument>.Update.Set("items.$[i].description", descriptionChangedTo));
+            // element-scoped on top of the version guard added below. The priority arm follows the
+            // same reasoning (GL-146): the ElemMatch makes a priority change racing a $pull
+            // conflict loudly, since $pull does not move the version and the version guard alone
+            // would let the $set match the document, change nothing, and be reported as saved.
+            if (hasDescriptionChange)
+            {
+                changes.Add(Builders<GiftListDocument>.Update.Set("items.$[i].description", descriptionChangedTo));
+            }
+
+            if (hasPriorityChange)
+            {
+                changes.Add(Builders<GiftListDocument>.Update.Set("items.$[i].priority", priorityChangedTo));
+            }
+
             preconditions.Add(Builders<GiftListDocument>.Filter.ElemMatch(
                 d => d.Items, i => i.ItemId == itemId));
             // The GUID must be encoded the same way BuildingBlocks.Persistence.MongoConventions
@@ -214,9 +249,9 @@ internal static class GiftListToUpdateMapper
                 new BsonDocument("i.itemId", new BsonBinaryData(itemId, GuidRepresentation.Standard)))];
         }
 
-        if (renamedTo is not null || expiryMovedTo is not null || hasDescriptionChange)
+        if (renamedTo is not null || expiryMovedTo is not null || hasDescriptionChange || hasPriorityChange)
         {
-            // Field-scoped (a rename, an expiry move, a description change, or a combination), so
+            // Field-scoped (a rename, an expiry move, a description change, a priority change, or a combination), so
             // this update — and, conservatively, anything batched with it — is version-guarded,
             // and is the only kind of update that advances the stored counter.
             //

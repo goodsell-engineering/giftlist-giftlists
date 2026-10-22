@@ -2,6 +2,7 @@ using GiftLists.Application.GiftLists;
 using GiftLists.Domain.GiftLists;
 using GiftLists.IntegrationTests.Fixtures;
 using Microsoft.Extensions.DependencyInjection;
+using MongoDB.Driver;
 
 namespace GiftLists.IntegrationTests.Support;
 
@@ -39,8 +40,8 @@ internal static class GiftListSeeding
 
     /// <summary>Seeds a list already carrying one item, for RemoveGiftItem's happy path.</summary>
     public static Task<(GiftList List, GiftItemId ItemId)> SeedListWithItemAsync(
-        GiftListsFixture fixture, Guid ownerId, string? description = null) =>
-        SeedListWithItemAsync(fixture, ownerId, description, expiresAt: null);
+        GiftListsFixture fixture, Guid ownerId, string? description = null, int priority = 3) =>
+        SeedListWithItemAsync(fixture, ownerId, description, expiresAt: null, priority);
 
     /// <summary>
     /// The same as above, but able to seed a list that has ALREADY expired — needed for
@@ -50,7 +51,7 @@ internal static class GiftListSeeding
     /// this goes through <see cref="GiftList.Rehydrate"/> instead of <see cref="GiftList.Create"/>.
     /// </summary>
     public static async Task<(GiftList List, GiftItemId ItemId)> SeedListWithItemAsync(
-        GiftListsFixture fixture, Guid ownerId, string? description, DateTimeOffset? expiresAt)
+        GiftListsFixture fixture, Guid ownerId, string? description, DateTimeOffset? expiresAt, int priority = 3)
     {
         var now = DateTimeOffset.UtcNow;
         GiftList list;
@@ -83,6 +84,7 @@ internal static class GiftListSeeding
             new GiftItemName("Coffee grinder"),
             string.IsNullOrWhiteSpace(description) ? null : new GiftItemDescription(description),
             null,
+            new GiftItemPriority(priority),
             expiresAt is { } already && already <= now ? now.AddDays(-30) : now);
         list.ClearDomainEvents();
 
@@ -98,4 +100,57 @@ internal static class GiftListSeeding
     }
 
     public static string RandomShareToken() => Guid.NewGuid().ToString("N")[..ShareToken.Length];
+
+    /// <summary>Adds another item to an already-seeded list, through the real repository; returns its id.</summary>
+    public static async Task<GiftItemId> AddItemAsync(
+        GiftListsFixture fixture, GiftListId listId, int priority = 3)
+    {
+        using var scope = fixture.CreateGiftListsScope();
+        var repository = scope.ServiceProvider.GetRequiredService<IGiftListRepository>();
+        var loaded = await repository.FindByIdAsync(listId, CancellationToken.None)
+            ?? throw new InvalidOperationException("Seeded list not found.");
+        var itemId = GiftItemId.New();
+        loaded.AddItem(itemId, new GiftItemName("Board game"), null, null, new GiftItemPriority(priority), DateTimeOffset.UtcNow);
+        await repository.UpdateAsync(loaded, CancellationToken.None);
+        return itemId;
+    }
+
+    /// <summary>Removes an item through the real repository, so a "removed item" test's Arrange is deterministic.</summary>
+    public static async Task RemoveItemAsync(GiftListsFixture fixture, GiftListId listId, GiftItemId itemId)
+    {
+        using var scope = fixture.CreateGiftListsScope();
+        var repository = scope.ServiceProvider.GetRequiredService<IGiftListRepository>();
+        var loaded = await repository.FindByIdAsync(listId, CancellationToken.None)
+            ?? throw new InvalidOperationException("Seeded list not found.");
+        loaded.RemoveItem(itemId, DateTimeOffset.UtcNow);
+        await repository.UpdateAsync(loaded, CancellationToken.None);
+    }
+
+    /// <summary>
+    /// Strips the <c>priority</c> field from every item of a stored list, leaving the raw shape a
+    /// pre-GL-146 document had. Raw on purpose: the document type cannot express "absent", and
+    /// hand-writing the old shape would drift from what Mongo really holds.
+    /// </summary>
+    public static async Task StripPriorityFromStoredItemsAsync(GiftListsFixture fixture, GiftListId listId)
+    {
+        var collection = fixture.Database.GetCollection<MongoDB.Bson.BsonDocument>(GiftListsFixture.GiftListsCollectionName);
+        var result = await collection.UpdateOneAsync(
+            MongoDB.Driver.Builders<MongoDB.Bson.BsonDocument>.Filter.Eq(
+                "_id", new MongoDB.Bson.BsonBinaryData(listId.Value, MongoDB.Bson.GuidRepresentation.Standard)),
+            MongoDB.Driver.Builders<MongoDB.Bson.BsonDocument>.Update.Unset("items.$[].priority"));
+        if (result.ModifiedCount != 1)
+        {
+            throw new InvalidOperationException("Could not strip priority from the seeded document.");
+        }
+    }
+
+    /// <summary>The raw stored document of a list, as Mongo holds it.</summary>
+    public static async Task<MongoDB.Bson.BsonDocument> GetRawDocumentAsync(GiftListsFixture fixture, GiftListId listId)
+    {
+        var collection = fixture.Database.GetCollection<MongoDB.Bson.BsonDocument>(GiftListsFixture.GiftListsCollectionName);
+        return await collection.Find(
+                MongoDB.Driver.Builders<MongoDB.Bson.BsonDocument>.Filter.Eq(
+                    "_id", new MongoDB.Bson.BsonBinaryData(listId.Value, MongoDB.Bson.GuidRepresentation.Standard)))
+            .SingleAsync();
+    }
 }

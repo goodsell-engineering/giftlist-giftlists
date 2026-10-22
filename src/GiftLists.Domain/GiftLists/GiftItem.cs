@@ -10,12 +10,13 @@ namespace GiftLists.Domain.GiftLists;
 /// </summary>
 public sealed class GiftItem
 {
-    private GiftItem(GiftItemId id, GiftItemName name, GiftItemDescription? description, GiftItemUrl? url)
+    private GiftItem(GiftItemId id, GiftItemName name, GiftItemDescription? description, GiftItemUrl? url, GiftItemPriority priority)
     {
         Id = id;
         Name = name;
         Description = description;
         Url = url;
+        Priority = priority;
     }
 
     public GiftItemId Id { get; }
@@ -25,6 +26,14 @@ public sealed class GiftItem
     public GiftItemDescription? Description { get; private set; }
 
     public GiftItemUrl? Url { get; }
+
+    public GiftItemPriority Priority { get; private set; }
+
+    /// <summary>
+    /// Sets the priority. Called only by <see cref="GiftList.ChangeItemPriority"/>, which bumps
+    /// <c>Version</c> and raises <c>GiftItemPriorityChanged</c>.
+    /// </summary>
+    internal void ChangePriority(GiftItemPriority priority) => Priority = priority;
 
     /// <summary>
     /// Sets or clears (<see langword="null"/>) the description. Called only by
@@ -47,6 +56,6 @@ public sealed class GiftItem
     /// doc comment has the reasoning) — the caller passes an already-constructed value object
     /// either way, so this factory still needs exactly one path.
     /// </summary>
-    public static GiftItem Create(GiftItemId id, GiftItemName name, GiftItemDescription? description, GiftItemUrl? url) =>
-        new(id, name, description, url);
+    public static GiftItem Create(GiftItemId id, GiftItemName name, GiftItemDescription? description, GiftItemUrl? url, GiftItemPriority priority) =>
+        new(id, name, description, url, priority);
 }

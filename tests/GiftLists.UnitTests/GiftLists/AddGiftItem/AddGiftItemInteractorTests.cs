@@ -25,7 +25,7 @@ public sealed class AddGiftItemInteractorTests
         // Arrange
         var repository = new FakeGiftListRepository();
         var interactor = new AddGiftItemInteractor(repository, new FakeDomainEventPublisher(), new FakeClock(Now));
-        var request = new AddGiftItemRequest(Guid.NewGuid(), Owner.Value, Guid.NewGuid(), "Coffee grinder", null, null);
+        var request = new AddGiftItemRequest(Guid.NewGuid(), Owner.Value, Guid.NewGuid(), "Coffee grinder", null, null, null);
 
         // Act
         var result = await interactor.Handle(request, CancellationToken.None);
@@ -43,7 +43,7 @@ public sealed class AddGiftItemInteractorTests
         var list = SeededList(repository, Owner, Now.AddDays(7));
         var publisher = new FakeDomainEventPublisher();
         var interactor = new AddGiftItemInteractor(repository, publisher, new FakeClock(Now));
-        var request = new AddGiftItemRequest(list.Id.Value, Guid.NewGuid(), Guid.NewGuid(), "Coffee grinder", null, null);
+        var request = new AddGiftItemRequest(list.Id.Value, Guid.NewGuid(), Guid.NewGuid(), "Coffee grinder", null, null, null);
 
         // Act
         var result = await interactor.Handle(request, CancellationToken.None);
@@ -63,7 +63,7 @@ public sealed class AddGiftItemInteractorTests
         var publisher = new FakeDomainEventPublisher();
         var afterExpiry = new FakeClock(list.Expiry.Value.AddSeconds(1));
         var interactor = new AddGiftItemInteractor(repository, publisher, afterExpiry);
-        var request = new AddGiftItemRequest(list.Id.Value, Owner.Value, Guid.NewGuid(), "Coffee grinder", null, null);
+        var request = new AddGiftItemRequest(list.Id.Value, Owner.Value, Guid.NewGuid(), "Coffee grinder", null, null, null);
 
         // Act
         var result = await interactor.Handle(request, CancellationToken.None);
@@ -85,7 +85,7 @@ public sealed class AddGiftItemInteractorTests
         var publisher = new FakeDomainEventPublisher { SharedLog = callLog };
         var interactor = new AddGiftItemInteractor(repository, publisher, new FakeClock(Now));
         var itemId = Guid.NewGuid();
-        var request = new AddGiftItemRequest(list.Id.Value, Owner.Value, itemId, "Coffee grinder", "Burr", "https://example.com");
+        var request = new AddGiftItemRequest(list.Id.Value, Owner.Value, itemId, "Coffee grinder", "Burr", "https://example.com", null);
 
         // Act
         var result = await interactor.Handle(request, CancellationToken.None);
@@ -122,7 +122,7 @@ public sealed class AddGiftItemInteractorTests
         var publisher = new FakeDomainEventPublisher();
         var interactor = new AddGiftItemInteractor(repository, publisher, new FakeClock(Now));
         var itemId = Guid.NewGuid();
-        var request = new AddGiftItemRequest(list.Id.Value, Owner.Value, itemId, "Coffee grinder", "   ", "   ");
+        var request = new AddGiftItemRequest(list.Id.Value, Owner.Value, itemId, "Coffee grinder", "   ", "   ", null);
 
         // Act
         var result = await interactor.Handle(request, CancellationToken.None);
@@ -147,7 +147,7 @@ public sealed class AddGiftItemInteractorTests
         var publisher = new FakeDomainEventPublisher();
         var interactor = new AddGiftItemInteractor(repository, publisher, new FakeClock(Now));
         var request = new AddGiftItemRequest(
-            list.Id.Value, Owner.Value, Guid.NewGuid(), "Coffee grinder", "Burr", "https://example.com");
+            list.Id.Value, Owner.Value, Guid.NewGuid(), "Coffee grinder", "Burr", "https://example.com", null);
 
         // Act
         var first = await interactor.Handle(request, CancellationToken.None);
@@ -158,5 +158,26 @@ public sealed class AddGiftItemInteractorTests
         Assert.True(second.IsSuccess);
         Assert.Equal(first.Value.ItemId, second.Value.ItemId);
         Assert.Single(list.Items);
+    }
+
+    [Theory]
+    [InlineData(null, 3)]
+    [InlineData(1, 1)]
+    [InlineData(5, 5)]
+    public async Task Handle_ShouldStoreTheGivenPriority_OrTheDefaultOf3_WhenNoneIsGiven(int? requested, int expected)
+    {
+        // Arrange
+        var repository = new FakeGiftListRepository();
+        var list = SeededList(repository, Owner, Now.AddDays(7));
+        var interactor = new AddGiftItemInteractor(repository, new FakeDomainEventPublisher(), new FakeClock(Now));
+        var request = new AddGiftItemRequest(
+            list.Id.Value, Owner.Value, Guid.NewGuid(), "Coffee grinder", null, null, requested);
+
+        // Act
+        var result = await interactor.Handle(request, CancellationToken.None);
+
+        // Assert
+        Assert.True(result.IsSuccess);
+        Assert.Equal(expected, Assert.Single(list.Items).Priority.Value);
     }
 }
