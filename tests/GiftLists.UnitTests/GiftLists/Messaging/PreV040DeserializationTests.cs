@@ -74,4 +74,58 @@ public sealed class PreV040DeserializationTests
         Assert.Null(command.Priority);
         Assert.Equal("Coffee grinder", command.Name);
     }
+
+    // TC-GL-146-P05: until Reservations and the Gateway merge, a consumer on Contracts 0.3.0
+    // receives 0.4.0 payloads with a trailing Priority. BuildingBlocks fail-fasts on a
+    // JsonException, so a strict read would dead-letter every item add. These records are the
+    // exact 0.3.0 shapes.
+    internal sealed record GiftItemAddedV1As030(
+        Guid ListId, Guid ItemId, string Name, string? Description, string? Url, DateTimeOffset AddedAt);
+
+    internal sealed record AddGiftItemAs030(
+        Guid ListId, Guid RequesterId, Guid ItemId, string Name, string? Description, string? Url);
+
+    [Fact]
+    public async Task GiftItemAddedV1_ShouldDeserializeIntoThe030Shape_WhenThePayloadCarriesAPriority()
+    {
+        // Arrange
+        var json = """
+            {"ListId":"11111111-1111-1111-1111-111111111111","ItemId":"22222222-2222-2222-2222-222222222222",
+             "Name":"Coffee grinder","Description":"Burr","Url":"https://example.com/g","AddedAt":"2026-01-01T00:00:00+00:00","Priority":5}
+            """;
+
+        // Act
+        var body = await DeserializeAsync(json, typeof(GiftItemAddedV1As030));
+
+        // Assert
+        var added = Assert.IsType<GiftItemAddedV1As030>(body);
+        Assert.Equal(Guid.Parse("11111111-1111-1111-1111-111111111111"), added.ListId);
+        Assert.Equal(Guid.Parse("22222222-2222-2222-2222-222222222222"), added.ItemId);
+        Assert.Equal("Coffee grinder", added.Name);
+        Assert.Equal("Burr", added.Description);
+        Assert.Equal("https://example.com/g", added.Url);
+        Assert.Equal(new DateTimeOffset(2026, 1, 1, 0, 0, 0, TimeSpan.Zero), added.AddedAt);
+    }
+
+    [Fact]
+    public async Task AddGiftItem_ShouldDeserializeIntoThe030Shape_WhenThePayloadCarriesAPriority()
+    {
+        // Arrange
+        var json = """
+            {"ListId":"11111111-1111-1111-1111-111111111111","RequesterId":"33333333-3333-3333-3333-333333333333",
+             "ItemId":"22222222-2222-2222-2222-222222222222","Name":"Coffee grinder","Description":"Burr","Url":"https://example.com/g","Priority":5}
+            """;
+
+        // Act
+        var body = await DeserializeAsync(json, typeof(AddGiftItemAs030));
+
+        // Assert
+        var command = Assert.IsType<AddGiftItemAs030>(body);
+        Assert.Equal(Guid.Parse("11111111-1111-1111-1111-111111111111"), command.ListId);
+        Assert.Equal(Guid.Parse("33333333-3333-3333-3333-333333333333"), command.RequesterId);
+        Assert.Equal(Guid.Parse("22222222-2222-2222-2222-222222222222"), command.ItemId);
+        Assert.Equal("Coffee grinder", command.Name);
+        Assert.Equal("Burr", command.Description);
+        Assert.Equal("https://example.com/g", command.Url);
+    }
 }
